@@ -40,6 +40,7 @@ object ModelRegistry {
     private lateinit var whisperCatalog: WhisperCatalog
     private lateinit var piperCatalog: PiperCatalog
     private lateinit var downloader: ModelDownloader
+    private lateinit var store: MetadataStore
 
     /**
      * Initialize the registry with optional configuration.
@@ -56,7 +57,19 @@ object ModelRegistry {
         }
         this.whisperCatalog = WhisperCatalog(client, config)
         this.piperCatalog = PiperCatalog(client, config)
-        this.downloader = ModelDownloader(client, config)
+
+        // Wire up DI: MetadataStore and strategies depend on FileSystem + StoragePaths,
+        // both implemented by PlatformStorage — injected here at the composition root.
+        val fs: FileSystem = PlatformStorage
+        val paths: StoragePaths = PlatformStorage
+        this.store = MetadataStore(fs, paths)
+        val http = HttpFileDownloader(client, config, fs)
+        this.downloader = ModelDownloader(
+            listOf(
+                WhisperDownloadStrategy(http, fs, paths, store),
+                PiperDownloadStrategy(http, fs, paths, store)
+            )
+        )
         initialized = true
     }
 
@@ -113,19 +126,19 @@ object ModelRegistry {
     ): Result<LocalModel> {
         requireInitialized()
 
-        // Check if already downloaded
-        val existing = MetadataStore.getModel(model.id)
-        if (existing != null && PlatformStorage.fileExists(existing.modelPath)) {
+        // Return cached model immediately if already downloaded (all required files present).
+        val existing = store.getModel(model.id)
+        val existingConfig = existing?.configPath
+        if (existing != null
+            && PlatformStorage.fileExists(existing.modelPath)
+            && (existingConfig == null || PlatformStorage.fileExists(existingConfig))
+        ) {
             onProgress(DownloadProgress.completed(PlatformStorage.fileSize(existing.modelPath)))
             return Result.success(existing)
         }
 
         return try {
-            val localModel = when (model) {
-                is WhisperModelInfo -> downloader.downloadWhisperModel(model, onProgress)
-                is PiperVoiceInfo -> downloader.downloadPiperVoice(model, onProgress)
-            }
-            Result.success(localModel)
+            Result.success(downloader.download(model, onProgress))
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -148,8 +161,10 @@ object ModelRegistry {
      */
     fun getDownloadedModels(): List<LocalModel> {
         requireInitialized()
-        return MetadataStore.loadDownloadedModels().filter {
-            PlatformStorage.fileExists(it.modelPath)
+        return store.loadDownloadedModels().filter {
+            val configPath = it.configPath
+            PlatformStorage.fileExists(it.modelPath) &&
+                (configPath == null || PlatformStorage.fileExists(configPath))
         }
     }
 
@@ -158,7 +173,7 @@ object ModelRegistry {
      */
     fun getLocalModel(modelId: String): LocalModel? {
         requireInitialized()
-        val model = MetadataStore.getModel(modelId) ?: return null
+        val model = store.getModel(modelId) ?: return null
         return if (PlatformStorage.fileExists(model.modelPath)) model else null
     }
 
@@ -169,21 +184,17 @@ object ModelRegistry {
      */
     fun deleteModel(modelId: String): Boolean {
         requireInitialized()
-        val model = MetadataStore.getModel(modelId) ?: return false
+        val model = store.getModel(modelId) ?: return false
 
-        // Delete model file
         PlatformStorage.deleteFile(model.modelPath)
-
-        // Delete config file if present (Piper)
         model.configPath?.let { PlatformStorage.deleteFile(it) }
 
-        // For Piper, try deleting the voice directory too
         if (model.modelType == LocalModelType.PIPER) {
             val voiceDir = model.modelPath.substringBeforeLast('/')
             PlatformStorage.deleteFile(voiceDir)
         }
 
-        MetadataStore.removeModel(modelId)
+        store.removeModel(modelId)
         return true
     }
 
@@ -198,7 +209,6 @@ object ModelRegistry {
         requireInitialized()
         whisperCatalog.clearCache()
         piperCatalog.clearCache()
-        // Trigger fresh fetches
         whisperCatalog.fetchModels()
         piperCatalog.fetchVoices()
     }

@@ -6,11 +6,10 @@ import kotlinx.cinterop.alloc
 import kotlinx.cinterop.get
 import kotlinx.cinterop.memScoped
 import kotlinx.cinterop.ptr
-import platform.AVFAudio.AVAudioApplication
-import platform.AVFAudio.AVAudioApplicationRecordPermissionGranted
 import platform.AVFAudio.AVAudioEngine
 import platform.AVFAudio.AVAudioSession
 import platform.AVFAudio.AVAudioSessionCategoryRecord
+import platform.AVFAudio.AVAudioSessionRecordPermissionGranted
 import platform.Foundation.NSError
 
 @OptIn(ExperimentalForeignApi::class)
@@ -38,8 +37,8 @@ actual class AudioRecorder actual constructor() {
         // By the time the user taps the mic the dialog has already been shown.
         // If still not granted, bail out so the caller gets an empty FloatArray
         // and can show a clear "check microphone permission" error.
-        if (AVAudioApplication.sharedInstance().recordPermission
-            != AVAudioApplicationRecordPermissionGranted
+        if (AVAudioSession.sharedInstance().recordPermission
+            != AVAudioSessionRecordPermissionGranted
         ) {
             println("[AudioRecorder] Mic permission not granted")
             return

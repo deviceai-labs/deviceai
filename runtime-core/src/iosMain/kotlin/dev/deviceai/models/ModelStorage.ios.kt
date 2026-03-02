@@ -5,9 +5,9 @@ import platform.Foundation.*
 
 @OptIn(ExperimentalForeignApi::class)
 @Suppress("EXPECT_ACTUAL_CLASSIFIERS_ARE_IN_BETA_WARNING")
-actual object PlatformStorage {
+actual object PlatformStorage : StoragePaths, FileSystem {
 
-    actual fun getModelsDir(): String {
+    override fun getModelsDir(): String {
         val paths = NSSearchPathForDirectoriesInDomains(
             NSDocumentDirectory, NSUserDomainMask, true
         )
@@ -16,7 +16,7 @@ actual object PlatformStorage {
         return "$documentsDir/speechkmp_models"
     }
 
-    actual fun getTempDir(): String {
+    override fun getTempDir(): String {
         val paths = NSSearchPathForDirectoriesInDomains(
             NSCachesDirectory, NSUserDomainMask, true
         )
@@ -25,7 +25,7 @@ actual object PlatformStorage {
         return "$cachesDir/speechkmp_tmp"
     }
 
-    actual fun ensureDirectoryExists(path: String): Boolean {
+    override fun ensureDirectoryExists(path: String): Boolean {
         val fm = NSFileManager.defaultManager
         if (fm.fileExistsAtPath(path)) return true
         return try {
@@ -35,37 +35,37 @@ actual object PlatformStorage {
         }
     }
 
-    actual fun fileExists(path: String): Boolean =
+    override fun fileExists(path: String): Boolean =
         NSFileManager.defaultManager.fileExistsAtPath(path)
 
-    actual fun deleteFile(path: String): Boolean =
+    override fun deleteFile(path: String): Boolean =
         try {
             NSFileManager.defaultManager.removeItemAtPath(path, error = null)
         } catch (_: Exception) {
             false
         }
 
-    actual fun moveFile(from: String, to: String): Boolean =
+    override fun moveFile(from: String, to: String): Boolean =
         try {
             NSFileManager.defaultManager.moveItemAtPath(from, toPath = to, error = null)
         } catch (_: Exception) {
             false
         }
 
-    actual fun fileSize(path: String): Long {
+    override fun fileSize(path: String): Long {
         val attrs = NSFileManager.defaultManager.attributesOfItemAtPath(path, error = null)
             ?: return -1L
         return (attrs[NSFileSize] as? NSNumber)?.longValue ?: -1L
     }
 
-    actual fun readText(path: String): String? =
+    override fun readText(path: String): String? =
         try {
             NSString.stringWithContentsOfFile(path, encoding = NSUTF8StringEncoding, error = null)
         } catch (_: Exception) {
             null
         }
 
-    actual fun writeText(path: String, content: String): Boolean =
+    override fun writeText(path: String, content: String): Boolean =
         try {
             (content as NSString).writeToFile(path, atomically = true, encoding = NSUTF8StringEncoding, error = null)
         } catch (_: Exception) {

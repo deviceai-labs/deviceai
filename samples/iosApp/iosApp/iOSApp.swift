@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import AVFoundation
 
 class AppDelegate: NSObject, UIApplicationDelegate {

@@ -3,15 +3,6 @@ package dev.deviceai.models
 import kotlinx.serialization.Serializable
 
 /**
- * Common interface for all downloadable model types.
- */
-sealed interface ModelInfo {
-    val id: String
-    val displayName: String
-    val sizeBytes: Long
-}
-
-/**
  * Whisper model size tiers.
  */
 enum class WhisperSize(val label: String) {
@@ -70,8 +61,7 @@ data class LanguageInfo(
 
 /**
  * Whisper GGML model available on HuggingFace.
- *
- * Files are hosted at: huggingface.co/ggerganov/whisper.cpp/resolve/main/{id}
+ * Implements [ModelInfo] from runtime-core.
  */
 data class WhisperModelInfo(
     override val id: String,
@@ -85,8 +75,7 @@ data class WhisperModelInfo(
 
 /**
  * Piper ONNX voice model available on HuggingFace.
- *
- * Each voice requires two files: .onnx model + .onnx.json config.
+ * Implements [ModelInfo] from runtime-core.
  */
 data class PiperVoiceInfo(
     override val id: String,
@@ -100,23 +89,8 @@ data class PiperVoiceInfo(
     val configUrl: String
 ) : ModelInfo
 
-/**
- * A model that has been downloaded and is available locally.
- */
-@Serializable
-data class LocalModel(
-    val modelId: String,
-    val modelType: LocalModelType,
-    val modelPath: String,
-    val configPath: String? = null,
-    val downloadedAt: Long
-)
-
-/**
- * Type discriminator for local models.
- */
-@Serializable
-enum class LocalModelType {
-    WHISPER,
-    PIPER
-}
+// LocalModelType constants for runtime-speech model types.
+// Defined here as companion extensions so runtime-core never needs to be modified
+// when new modules are added — Open/Closed Principle.
+val LocalModelType.Companion.WHISPER get() = LocalModelType("WHISPER")
+val LocalModelType.Companion.PIPER   get() = LocalModelType("PIPER")

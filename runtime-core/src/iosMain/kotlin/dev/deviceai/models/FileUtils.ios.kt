@@ -7,7 +7,7 @@ import platform.Foundation.*
 import platform.posix.*
 
 @OptIn(ExperimentalForeignApi::class)
-internal actual fun appendToFile(path: String, data: ByteArray, length: Int) {
+actual fun appendToFile(path: String, data: ByteArray, length: Int) {
     val fileHandle = NSFileHandle.fileHandleForWritingAtPath(path)
     if (fileHandle != null) {
         fileHandle.seekToEndOfFile()

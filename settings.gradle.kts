@@ -15,5 +15,6 @@ dependencyResolutionManagement {
     }
 }
 
+include(":runtime-core")
 include(":runtime-speech")
 include(":samples:composeApp")

@@ -1,6 +1,6 @@
 # DeviceAI Runtime · KMP
 
-**On-device AI runtime for mobile. Run speech recognition and synthesis locally — no cloud, no latency, no privacy risk.**
+**On-device AI runtime for Kotlin Multiplatform. Ship speech recognition and synthesis on Android, iOS, and Desktop — no cloud, no latency, no privacy risk.**
 
 [![Build](https://github.com/deviceai-labs/runtime-kmp/actions/workflows/ci.yml/badge.svg)](https://github.com/deviceai-labs/runtime-kmp/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
@@ -14,18 +14,18 @@
 
 Mobile AI is broken for most teams:
 
-- **Fragmented SDKs** — separate wrappers for Android, iOS, desktop
+- **Fragmented SDKs** — separate wrappers for Android, iOS, and desktop that never stay in sync
 - **Cloud dependency** — latency, cost, and user data leaving the device
-- **Model loading is messy** — threading, memory pressure, cold-start problems
-- **Every team reinvents inference wrappers** — from scratch, badly
+- **Model loading is messy** — threading, memory pressure, cold-start, and caching reinvented every time
+- **Every team writes the same wrapper** — from scratch, badly
 
-DeviceAI Runtime solves this with a single Kotlin Multiplatform library: one API, all platforms, fully local.
+DeviceAI Runtime gives you a single Kotlin Multiplatform API: one integration, all platforms, fully local.
 
 ---
 
 ## Benchmarks
 
-Real numbers on real hardware. No marketing RTF.
+Real numbers on real hardware.
 
 | Device | Chip | Model | Audio | Inference | RTF |
 |--------|------|-------|-------|-----------|-----|
@@ -41,20 +41,25 @@ Real numbers on real hardware. No marketing RTF.
 Your App
     │
     ▼
-DeviceAI Runtime  (dev.deviceai)
-    │   SpeechBridge — unified Kotlin API
-    │   ModelRegistry — auto-download from HuggingFace
+DeviceAIRuntime.configure(Environment.DEVELOPMENT)   ← one-time SDK init
     │
-    ├── Android / Desktop
-    │       JNI  →  libspeech_jni.so
+    ├── runtime-core   (dev.deviceai:runtime-core)
+    │       CoreSDKLogger — structured, environment-aware logging
+    │       ModelRegistry — model discovery, download, local management
+    │       PlatformStorage — cross-platform file I/O
     │
-    └── iOS
-            C Interop  →  speech_ios framework
+    └── runtime-speech  (dev.deviceai:runtime-speech)
+            SpeechBridge — unified STT + TTS Kotlin API
+            ModelRegistry — Whisper + Piper model catalog from HuggingFace
                 │
-                ▼
-        Native Inference
-        ├── whisper.cpp  (STT)
-        └── piper + ONNX  (TTS)
+                ├── Android / Desktop
+                │       JNI → libspeech_jni.so / libspeech_jni.dylib
+                │
+                └── iOS
+                        C Interop → libspeech_merged.a
+                            │
+                            ├── whisper.cpp  (STT)
+                            └── piper + ONNX  (TTS)
 ```
 
 ---
@@ -68,104 +73,187 @@ DeviceAI Runtime  (dev.deviceai)
 | Auto model download (HuggingFace) | ✅ |
 | GPU acceleration (Metal / Vulkan) | ✅ |
 | Streaming transcription | ✅ |
-| Voice activity detection | ✅ |
+| Environment-aware logging | ✅ |
 | Offline — zero cloud dependency | ✅ |
 | LLM inference | 🗓 Planned |
 
 ---
 
-## Quick Start
+## Integration — 5 minutes to first transcription
 
-### 1. Add the dependency
-
-**Via Maven Central:**
+### Step 1 — Add dependencies
 
 ```kotlin
-// build.gradle.kts
+// build.gradle.kts (your module)
+implementation("dev.deviceai:runtime-core:0.1.0")
 implementation("dev.deviceai:runtime-speech:0.1.0")
 ```
 
-No repository configuration needed — Maven Central is included by default in Android and KMP projects.
+No extra repository config needed — both artifacts are on Maven Central.
 
-**Or use as a local module** (clone and include directly):
+---
+
+### Step 2 — Initialize the SDK
+
+Call `DeviceAIRuntime.configure()` **once**, before any other SDK call. This sets the log verbosity for the environment you're running in.
+
+#### Android — `Application.onCreate()` or `MainActivity.onCreate()`
 
 ```kotlin
-// settings.gradle.kts
-include(":runtime-speech")
-project(":runtime-speech").projectDir = File("path/to/deviceai-runtime-kmp/runtime-speech")
+import dev.deviceai.core.DeviceAIRuntime
+import dev.deviceai.core.Environment
+import dev.deviceai.models.PlatformStorage
 
-// build.gradle.kts
-implementation(project(":runtime-speech"))
+class MainActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+
+        // 1. Configure environment (switch to PRODUCTION for release builds)
+        DeviceAIRuntime.configure(Environment.DEVELOPMENT)
+
+        // 2. Android needs a Context for file storage — must come after configure()
+        PlatformStorage.initialize(this)
+
+        setContent { App() }
+    }
+}
 ```
 
-### 2. Speech-to-Text
+#### iOS — `MainViewController.kt`
+
+```kotlin
+import dev.deviceai.core.DeviceAIRuntime
+import dev.deviceai.core.Environment
+
+fun MainViewController(): UIViewController {
+    DeviceAIRuntime.configure(Environment.DEVELOPMENT)
+    return ComposeUIViewController { App() }
+}
+```
+
+> **Info.plist** — add the microphone usage description and ProMotion key:
+> ```xml
+> <key>NSMicrophoneUsageDescription</key>
+> <string>Used for on-device speech recognition.</string>
+> <key>CADisableMinimumFrameDurationOnPhone</key>
+> <true/>
+> ```
+
+#### Desktop — `main.kt`
+
+```kotlin
+import dev.deviceai.core.DeviceAIRuntime
+import dev.deviceai.core.Environment
+
+fun main() = application {
+    DeviceAIRuntime.configure(Environment.DEVELOPMENT)
+    Window(onCloseRequest = ::exitApplication, title = "My App") { App() }
+}
+```
+
+---
+
+### Step 3 — Download a model
+
+`ModelRegistry` fetches the catalog from HuggingFace and downloads models to local storage. Downloads resume automatically on interruption.
+
+```kotlin
+import dev.deviceai.models.ModelRegistry
+
+// Returns immediately if already downloaded, otherwise streams from HuggingFace
+val model = ModelRegistry.getOrDownload("ggml-tiny.en.bin") { progress ->
+    println("${progress.percentComplete.toInt()}% — ${progress.bytesDownloaded / 1_000_000}MB")
+}
+```
+
+> **whisper-tiny.en** (75MB) is the recommended starting point — it runs 7× faster than real-time on mid-range Android hardware.
+
+---
+
+### Step 4 — Transcribe speech
 
 ```kotlin
 import dev.deviceai.SpeechBridge
 import dev.deviceai.SttConfig
-import dev.deviceai.models.ModelRegistry
 
-// Download model on first run (whisper-tiny = 75MB)
-val model = ModelRegistry.getOrDownload("ggml-tiny.en.bin")
+// Initialize the STT engine with the downloaded model
+SpeechBridge.initStt(model.modelPath, SttConfig(language = "en", useGpu = true))
 
-// Initialize
-SpeechBridge.initStt(model.path, SttConfig(language = "en"))
+// Transcribe a FloatArray of 16kHz mono PCM samples
+val text: String = SpeechBridge.transcribeAudio(samples)
 
-// Transcribe audio samples (FloatArray, 16kHz mono)
-val text = SpeechBridge.transcribeAudio(samples)
+// Or transcribe a WAV file directly
+val text: String = SpeechBridge.transcribe("/path/to/audio.wav")
 
-// Or transcribe a file
-val text = SpeechBridge.transcribe("/path/to/audio.wav")
-
-// Cleanup
+// Clean up when done
 SpeechBridge.shutdownStt()
 ```
 
-### 3. Text-to-Speech
+---
+
+### Step 5 — Synthesize speech (optional)
 
 ```kotlin
 import dev.deviceai.SpeechBridge
 import dev.deviceai.TtsConfig
 
 SpeechBridge.initTts(
-    modelPath = "/path/to/voice.onnx",
-    configPath = "/path/to/voice.json",
-    config = TtsConfig(speechRate = 1.0f)
+    modelPath  = voice.modelPath,
+    configPath = voice.configPath!!,
+    config     = TtsConfig(speechRate = 1.0f)
 )
 
-val samples: ShortArray = SpeechBridge.synthesize("Hello, world!")
+val pcm: ShortArray = SpeechBridge.synthesize("Hello from DeviceAI.")
+// Play pcm with AudioTrack (Android), AVAudioEngine (iOS), or javax.sound (Desktop)
 
 SpeechBridge.shutdownTts()
 ```
 
-### Android — initialize storage before models
+---
+
+## Logging
+
+`DeviceAIRuntime.configure()` sets the log verbosity automatically:
+
+| Environment | Min level | What you see |
+|-------------|-----------|--------------|
+| `DEVELOPMENT` | `DEBUG` | Everything — debug, info, warnings, errors |
+| `PRODUCTION` | `WARN` | Warnings and errors only |
+
+You can forward SDK logs to your own backend (Crashlytics, Datadog, Sentry, etc.):
 
 ```kotlin
-// In Application.onCreate() or MainActivity
-PlatformStorage.initialize(context)
+DeviceAIRuntime.configure(
+    environment = Environment.PRODUCTION,
+    logHandler  = { event ->
+        Crashlytics.log("${event.level} [${event.tag}] ${event.message}")
+        event.throwable?.let { Crashlytics.recordException(it) }
+    }
+)
 ```
 
 ---
 
 ## Models
 
-### Whisper (STT) — via [ggerganov/whisper.cpp](https://github.com/ggerganov/whisper.cpp)
+### Whisper (STT) — via [ggerganov/whisper.cpp](https://huggingface.co/ggerganov/whisper.cpp)
 
-| Model | Size | Best for |
-|-------|------|----------|
-| tiny.en | 75 MB | Fast, English-only |
-| base | 142 MB | Balanced |
-| small | 466 MB | High accuracy |
+| Model | Size | Speed | Best for |
+|-------|------|-------|----------|
+| `ggml-tiny.en.bin` | 75 MB | 7× real-time | English, mobile-first |
+| `ggml-base.bin` | 142 MB | Fast | Multilingual, balanced |
+| `ggml-small.bin` | 466 MB | Medium | Higher accuracy |
+| `ggml-medium.bin` | 1.5 GB | Slow | Desktop / server |
 
 ### Piper (TTS) — via [rhasspy/piper-voices](https://huggingface.co/rhasspy/piper-voices)
 
 | Voice | Size | Language |
 |-------|------|----------|
-| en_US-lessac-medium | 60 MB | English (US) |
-| en_GB-alba-medium | 55 MB | English (UK) |
-| de_DE-thorsten-medium | 65 MB | German |
+| `en_US-lessac-medium` | 60 MB | English (US) |
+| `en_GB-alba-medium` | 55 MB | English (UK) |
+| `de_DE-thorsten-medium` | 65 MB | German |
 
-Models are downloaded automatically via `ModelRegistry` on first use.
+Browse all voices via `ModelRegistry.getPiperVoices()` — filters by language and quality.
 
 ---
 
@@ -173,9 +261,9 @@ Models are downloaded automatically via `ModelRegistry` on first use.
 
 | Platform | STT | TTS | Sample App |
 |----------|-----|-----|------------|
-| Android | ✅ | ✅ | ✅ |
-| iOS | ✅ | ✅ | ✅ |
-| macOS (Desktop) | ✅ | ✅ | ✅ |
+| Android (API 26+) | ✅ | ✅ | ✅ |
+| iOS 16+ | ✅ | ✅ | ✅ |
+| macOS Desktop | ✅ | ✅ | ✅ |
 | Linux | 🚧 | 🚧 | — |
 | Windows | 🚧 | 🚧 | — |
 
@@ -183,59 +271,73 @@ Models are downloaded automatically via `ModelRegistry` on first use.
 
 ## Building from Source
 
-**Prerequisites:** CMake 3.22+, Android NDK r26+, Xcode 15+ (for iOS), Kotlin 2.0+
+**Prerequisites:** CMake 3.22+, Android NDK r26+, Xcode 16+ (iOS), Kotlin 2.2+
 
 ```bash
 git clone --recursive https://github.com/deviceai-labs/runtime-kmp.git
-cd deviceai-runtime-kmp
+cd runtime-kmp
 
-# Compile check
+# Compile checks
+./gradlew :runtime-core:compileKotlinJvm
 ./gradlew :runtime-speech:compileKotlinJvm
 ./gradlew :runtime-speech:compileDebugKotlinAndroid
 
-# Run the desktop sample
+# Run the desktop sample app
 ./gradlew :samples:composeApp:run
 ```
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for a deep-dive on the native layer, CMake setup, and module structure.
 
 ---
 
 ## Roadmap
 
-DeviceAI Runtime is modular — each AI modality ships as an independent module, independently versioned.
+DeviceAI Runtime is modular — each AI modality is an independent, independently-versioned module.
+
+### `runtime-core` — Shared Infrastructure ✅
+- [x] `ModelInfo`, `LocalModel`, `PlatformStorage`, `MetadataStore`
+- [x] `CoreSDKLogger` — structured, environment-aware logging
+- [x] `DeviceAIRuntime` — unified SDK entry point with `Environment` config
+- [x] Maven Central (`dev.deviceai:runtime-core:0.1.0`)
 
 ### `runtime-speech` — Speech ✅
 - [x] STT via whisper.cpp
 - [x] TTS via Piper + ONNX
 - [x] Model auto-download from HuggingFace
 - [x] KMP: Android, iOS, Desktop
-- [x] Maven Central release (`dev.deviceai:runtime-speech:0.1.0`)
+- [x] Maven Central (`dev.deviceai:runtime-speech:0.1.0`)
 - [ ] Streaming TTS
 - [ ] Voice activity detection (VAD)
 
 ### `runtime-llm` — Large Language Models 🗓
-- [ ] Local LLM inference (llama.cpp or similar)
-- [ ] KMP API matching the speech module pattern
-- [ ] Model registry integration
+- [ ] Local LLM inference via llama.cpp
+- [ ] GGUF model support
+- [ ] Streaming token generation
 
 ### `runtime-vlm` — Vision-Language Models 🗓
 - [ ] Image + text inference on-device
-- [ ] Camera feed support
+- [ ] Camera feed integration
 
-### `runtime-multimodal` — Combined Modalities 🗓
-- [ ] Compose across speech, vision, and language in one pipeline
-
-### Platform & Infrastructure 🗓
-- [ ] Cloud fallback layer (hybrid: device + edge + cloud)
-- [ ] Windows + Linux support
+### `runtime-kmp` — Meta-package 🗓
+- [ ] Single dependency that re-exports all modules
 
 ---
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). Issues and PRs are welcome.
+See [CONTRIBUTING.md](CONTRIBUTING.md). Issues and PRs welcome.
 
 ---
 
 ## Sample App
 
-The `samples/composeApp` directory contains a working Compose Multiplatform demo — downloads whisper-tiny on first launch, records audio, shows transcription with live latency.
+`samples/composeApp/` is a working Compose Multiplatform demo — auto-downloads whisper-tiny on first launch, records audio, and shows transcription with live latency. Runs on Android, iOS, and Desktop.
+
+```bash
+# Desktop
+./gradlew :samples:composeApp:run
+
+# Android — open in Android Studio and run on device/emulator
+
+# iOS — open samples/iosApp/iosApp.xcodeproj in Xcode and run
+```

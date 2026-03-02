@@ -185,7 +185,3 @@ private data class CachedWhisperEntry(
     }
 }
 
-/**
- * Platform-agnostic currentTimeMillis.
- */
-internal expect fun currentTimeMillis(): Long
