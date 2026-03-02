@@ -23,7 +23,6 @@ option(SPEECHKMP_ENABLE_TTS "Enable Text-to-Speech (requires ONNX Runtime)" OFF)
 
 set(WHISPER_DIR "${CMAKE_SOURCE_DIR}/../../../../whisper.cpp")
 set(PIPER_DIR "${CMAKE_SOURCE_DIR}/../../../../piper")
-set(PIPER_PHONEMIZE_DIR "${CMAKE_SOURCE_DIR}/../../../../piper-phonemize")
 set(ONNX_DIR "${CMAKE_SOURCE_DIR}/../../../../onnxruntime")
 set(ESPEAK_DIR "${CMAKE_SOURCE_DIR}/../../../../espeak-ng")
 set(IOS_CPP_DIR "${PROJECT_SOURCE_DIR}/../../src/iosMain/cpp")

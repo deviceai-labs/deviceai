@@ -14,7 +14,6 @@ option(SPEECHKMP_ENABLE_TTS "Enable Text-to-Speech (requires ONNX Runtime)" OFF)
 
 set(WHISPER_DIR "${CMAKE_SOURCE_DIR}/../../../../../whisper.cpp")
 set(PIPER_DIR "${CMAKE_SOURCE_DIR}/../../../../../piper")
-set(PIPER_PHONEMIZE_DIR "${CMAKE_SOURCE_DIR}/../../../../../piper-phonemize")
 set(ONNX_DIR "${CMAKE_SOURCE_DIR}/../../../../../onnxruntime")
 set(ESPEAK_DIR "${CMAKE_SOURCE_DIR}/../../../../../espeak-ng")
 
@@ -45,7 +44,6 @@ if(SPEECHKMP_ENABLE_TTS)
         set(ONNX_RUNTIME_LIB "${ONNX_DIR}/jni/${ANDROID_ABI}/libonnxruntime.so")
         set(ONNX_RUNTIME_INCLUDE "${ONNX_DIR}/headers")
     else()
-        # Desktop - find system ONNX Runtime or use bundled
         find_library(ONNX_RUNTIME_LIB onnxruntime HINTS ${ONNX_DIR}/lib)
         set(ONNX_RUNTIME_INCLUDE "${ONNX_DIR}/include")
     endif()
@@ -57,7 +55,7 @@ if(SPEECHKMP_ENABLE_TTS)
 endif()
 
 if(SPEECHKMP_ENABLE_TTS)
-    # espeak-ng (build as static library for phonemization)
+    # espeak-ng (embedded phonemization)
     set(USE_ASYNC OFF CACHE BOOL "" FORCE)
     set(USE_MBROLA OFF CACHE BOOL "" FORCE)
     set(USE_LIBPCAUDIO OFF CACHE BOOL "" FORCE)
@@ -78,32 +76,7 @@ if(SPEECHKMP_ENABLE_TTS)
 endif()
 
 if(SPEECHKMP_ENABLE_TTS AND ESPEAK_FOUND)
-    # piper-phonemize library
-    if(EXISTS ${PIPER_PHONEMIZE_DIR}/src/phonemize.cpp)
-        add_library(piper_phonemize STATIC
-            ${PIPER_PHONEMIZE_DIR}/src/phonemize.cpp
-            ${PIPER_PHONEMIZE_DIR}/src/phoneme_ids.cpp
-            ${PIPER_PHONEMIZE_DIR}/src/tashkeel.cpp
-            ${PIPER_PHONEMIZE_DIR}/src/shared.cpp
-        )
-        target_include_directories(piper_phonemize PUBLIC
-            ${PIPER_PHONEMIZE_DIR}/src
-            ${ONNX_RUNTIME_INCLUDE}
-        )
-        target_include_directories(piper_phonemize PRIVATE
-            ${ESPEAK_DIR}/src/include
-        )
-        target_link_libraries(piper_phonemize espeak-ng)
-        set(PIPER_PHONEMIZE_FOUND TRUE)
-    else()
-        message(WARNING "piper-phonemize not found at ${PIPER_PHONEMIZE_DIR}")
-        set(PIPER_PHONEMIZE_FOUND FALSE)
-        set(SPEECHKMP_ENABLE_TTS OFF)
-    endif()
-endif()
-
-if(SPEECHKMP_ENABLE_TTS AND PIPER_PHONEMIZE_FOUND)
-    # Piper TTS library
+    # Piper TTS library (espeak-ng is linked directly — piper-phonemize removed)
     if(EXISTS ${PIPER_DIR}/src/cpp/piper.cpp)
         add_library(piper STATIC
             ${PIPER_DIR}/src/cpp/piper.cpp
@@ -112,11 +85,11 @@ if(SPEECHKMP_ENABLE_TTS AND PIPER_PHONEMIZE_FOUND)
             ${PIPER_DIR}/src/cpp
         )
         target_include_directories(piper PRIVATE
-            ${PIPER_PHONEMIZE_DIR}/src
             ${ONNX_RUNTIME_INCLUDE}
+            ${ESPEAK_DIR}/src/include
         )
         target_link_libraries(piper
-            piper_phonemize
+            espeak-ng
             ${ONNX_RUNTIME_LIB}
         )
         set(PIPER_FOUND TRUE)
@@ -135,7 +108,6 @@ if(ANDROID)
     find_library(log-lib log)
 endif()
 
-# Source files
 set(JNI_SOURCES whisper_jni.cpp)
 
 if(SPEECHKMP_ENABLE_TTS)
@@ -150,7 +122,6 @@ target_include_directories(speech_jni PRIVATE
     ${WHISPER_DIR}
 )
 
-# Compile definitions
 if(NOT SPEECHKMP_ENABLE_TTS)
     target_compile_definitions(speech_jni PRIVATE SPEECHKMP_STT_ONLY=1)
 endif()
@@ -158,12 +129,10 @@ endif()
 if(SPEECHKMP_ENABLE_TTS)
     target_include_directories(speech_jni PRIVATE
         ${PIPER_DIR}/src/cpp
-        ${PIPER_PHONEMIZE_DIR}/src
         ${ONNX_RUNTIME_INCLUDE}
     )
 endif()
 
-# Link libraries
 if(WHISPER_FOUND)
     target_link_libraries(speech_jni whisper)
 endif()
