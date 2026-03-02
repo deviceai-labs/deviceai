@@ -14,9 +14,9 @@
 
 | Module | Who it's for | Distribution | Status |
 |--------|-------------|--------------|--------|
-| `kmp/core` | Kotlin (Android · iOS · Desktop) | Maven Central `dev.deviceai:kmp-core` | ✅ Available |
-| `kmp/speech` | Kotlin (Android · iOS · Desktop) | Maven Central `dev.deviceai:kmp-speech` | ✅ Available |
-| `kmp/llm` | Kotlin (Android · iOS · Desktop) | Maven Central `dev.deviceai:kmp-llm` | 🚧 In development |
+| `kmp/core` | Android & Kotlin Multiplatform | Maven Central `dev.deviceai:kmp-core` | ✅ Available |
+| `kmp/speech` | Android & Kotlin Multiplatform | Maven Central `dev.deviceai:kmp-speech` | ✅ Available |
+| `kmp/llm` | Android & Kotlin Multiplatform | Maven Central `dev.deviceai:kmp-llm` | 🚧 In development |
 | `ios/speech` | Swift (iOS only) | Swift Package Index | 🗓 Planned |
 | `flutter/speech` | Flutter (Android + iOS) | pub.dev `deviceai_speech` | 🗓 Planned |
 | `react-native/speech` | React Native (Android + iOS) | npm `react-native-deviceai-speech` | 🗓 Planned |
