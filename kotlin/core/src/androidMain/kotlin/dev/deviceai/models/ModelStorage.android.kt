@@ -23,30 +23,30 @@ actual object PlatformStorage : StoragePaths, FileSystem {
             "PlatformStorage not initialized. Call PlatformStorage.initialize(context) first."
         )
 
-    override fun getModelsDir(): String =
+    actual override fun getModelsDir(): String =
         File(requireContext().filesDir, "speechkmp_models").absolutePath
 
-    override fun getTempDir(): String =
+    actual override fun getTempDir(): String =
         File(requireContext().cacheDir, "speechkmp_tmp").absolutePath
 
-    override fun ensureDirectoryExists(path: String): Boolean =
+    actual override fun ensureDirectoryExists(path: String): Boolean =
         File(path).let { it.exists() || it.mkdirs() }
 
-    override fun fileExists(path: String): Boolean =
+    actual override fun fileExists(path: String): Boolean =
         File(path).exists()
 
-    override fun deleteFile(path: String): Boolean =
+    actual override fun deleteFile(path: String): Boolean =
         File(path).let { if (it.isDirectory) it.deleteRecursively() else it.delete() }
 
-    override fun moveFile(from: String, to: String): Boolean =
+    actual override fun moveFile(from: String, to: String): Boolean =
         File(from).renameTo(File(to))
 
-    override fun fileSize(path: String): Long =
+    actual override fun fileSize(path: String): Long =
         File(path).let { if (it.exists()) it.length() else -1L }
 
-    override fun readText(path: String): String? =
+    actual override fun readText(path: String): String? =
         try { File(path).takeIf { it.exists() }?.readText() } catch (_: Exception) { null }
 
-    override fun writeText(path: String, content: String): Boolean =
+    actual override fun writeText(path: String, content: String): Boolean =
         try { File(path).writeText(content); true } catch (_: Exception) { false }
 }
