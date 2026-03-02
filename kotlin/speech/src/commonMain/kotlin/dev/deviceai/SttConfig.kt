@@ -34,6 +34,9 @@ data class SttConfig(
      * Force output into a single segment, skipping subtitle-style timestamp
      * boundary detection. Set to true for interactive voice commands.
      * Set to false if you need timestamped segments (e.g. podcast transcription).
+     *
+     * Requires VAD (useVad = true) to trim trailing silence first — otherwise
+     * the decoder loops on silence and repeats the transcription.
      */
     val singleSegment: Boolean = true,
 

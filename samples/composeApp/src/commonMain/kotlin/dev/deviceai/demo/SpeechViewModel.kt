@@ -149,7 +149,6 @@ class SpeechViewModel(private val audioRecorder: AudioRecorder) {
             println("[LATENCY] transcribeAudio():    ${(t3 - t2).inWholeMilliseconds} ms  " +
                     "(Kotlin → JNI → whisper → JNI → Kotlin)")
             println("[LATENCY] ── TOTAL Kotlin ──    ${(t3 - t0).inWholeMilliseconds} ms")
-
             _recordingState.value = if (text.isNotBlank()) RecordingState.Result(text.trim())
                                     else RecordingState.Result("(no speech detected)")
         }

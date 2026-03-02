@@ -9,6 +9,7 @@
 
 #include <string>
 #include <vector>
+#include <algorithm>
 #include <atomic>
 #include <mutex>
 #include <cstring>
@@ -404,6 +405,59 @@ Java_dev_deviceai_SpeechBridge_nativeTranscribeAudio(
     LOGI("[LATENCY] JNI array copy:   %ld ms  (%d samples = %.2f s of audio)",
          t_jni_copy_done - t_jni_start, (int)audio.size(), audio_sec);
 
+    // ── VAD: trim leading/trailing silence ─────────────────────────
+    // Whisper loops on trailing silence, re-generating the same tokens.
+    // Energy-based VAD finds the actual speech region and crops to it,
+    // so Whisper only sees real speech content.
+    //
+    // Adaptive threshold: measure the noise floor of this specific recording
+    // (10th-percentile frame RMS) so the threshold automatically scales on
+    // noisy environments (emulators, cheap mics) without cutting real speech.
+    if (g_use_vad) {
+        const int FRAME = 480;   // 30 ms at 16 kHz
+        const int PAD   = 10;    // padding frames (~300 ms) around detected speech
+
+        int n_frames = (int)audio.size() / FRAME;
+
+        // Compute per-frame RMS
+        std::vector<float> frame_rms(n_frames);
+        for (int f = 0; f < n_frames; ++f) {
+            const float *p = audio.data() + f * FRAME;
+            float sum = 0.0f;
+            for (int i = 0; i < FRAME; ++i) sum += p[i] * p[i];
+            frame_rms[f] = std::sqrt(sum / FRAME);
+        }
+
+        // Noise floor = 10th-percentile RMS (quietest ~10% of frames)
+        std::vector<float> sorted_rms = frame_rms;
+        std::sort(sorted_rms.begin(), sorted_rms.end());
+        float noise_floor = sorted_rms[std::max(0, n_frames / 10)];
+
+        // Speech threshold: 4× above noise floor, minimum 0.02
+        float threshold = std::max(0.02f, noise_floor * 4.0f);
+        LOGI("[VAD] noise_floor=%.4f  threshold=%.4f", noise_floor, threshold);
+
+        int first_speech = -1, last_speech = -1;
+        for (int f = 0; f < n_frames; ++f) {
+            if (frame_rms[f] >= threshold) {
+                if (first_speech < 0) first_speech = f;
+                last_speech = f;
+            }
+        }
+
+        if (first_speech >= 0) {
+            int s = std::max(0,        first_speech - PAD) * FRAME;
+            int e = std::min(n_frames, last_speech  + PAD + 1) * FRAME;
+            float trimmed_sec = (float)(e - s) / WHISPER_SAMPLE_RATE;
+            LOGI("[VAD] speech frames %d–%d  trimmed %.2fs → %.2fs",
+                 first_speech, last_speech, audio_sec, trimmed_sec);
+            audio = std::vector<float>(audio.begin() + s, audio.begin() + e);
+        } else {
+            LOGI("[VAD] no speech detected — skipping transcription");
+            return env->NewStringUTF("");
+        }
+    }
+
     // ── Whisper inference ──────────────────────────────────────────
     // Auto-derive audio_ctx from actual sample count so the encoder's attention
     // window matches the real audio length instead of always running over 30s.
@@ -411,12 +465,24 @@ Java_dev_deviceai_SpeechBridge_nativeTranscribeAudio(
     struct whisper_full_params params = g_params;
     int auto_ctx = (static_cast<int>(audio.size()) + 319) / 320;
     params.audio_ctx = std::min(auto_ctx, 1500);
-    LOGI("[WHISPER-CFG] audio_ctx set to %d (from %d samples = %.2fs)",
-         params.audio_ctx, (int)audio.size(), audio_sec);
+    audio_sec = (float)audio.size() / WHISPER_SAMPLE_RATE;
+    LOGI("[WHISPER-CFG] audio_ctx set to %d (%.2fs after VAD trim)",
+         params.audio_ctx, audio_sec);
+
+    // ── Fresh state per call ───────────────────────────────────────
+    // whisper_full() writes into g_ctx's internal state and result_all buffer,
+    // which accumulates across calls and leaks into subsequent inferences even
+    // with no_context=true. A fresh whisper_state isolates every call completely.
+    struct whisper_state *state = whisper_init_state(g_ctx);
+    if (state == nullptr) {
+        LOGE("Failed to allocate whisper state");
+        return env->NewStringUTF("");
+    }
 
     long t_infer_start = now_ms();
 
-    if (whisper_full(g_ctx, params, audio.data(), audio.size()) != 0) {
+    if (whisper_full_with_state(g_ctx, state, params, audio.data(), (int)audio.size()) != 0) {
+        whisper_free_state(state);
         LOGE("Whisper inference failed");
         return env->NewStringUTF("");
     }
@@ -426,8 +492,6 @@ Java_dev_deviceai_SpeechBridge_nativeTranscribeAudio(
          t_infer_done - t_infer_start,
          (float)(t_infer_done - t_infer_start) / (audio_sec * 1000.0f));
 
-    // whisper_print_timings() goes to stderr — visible on Desktop/iOS but not Android logcat.
-    // Log the config that directly drives performance so we can diagnose from logcat.
     LOGI("[WHISPER-CFG] n_threads=%d  single_segment=%d  no_context=%d  gpu=%d",
          (int)params.n_threads, (int)params.single_segment,
          (int)params.no_context, (int)g_use_gpu.load());
@@ -437,13 +501,15 @@ Java_dev_deviceai_SpeechBridge_nativeTranscribeAudio(
     long t_collect_start = now_ms();
 
     std::string result;
-    int n_segments = whisper_full_n_segments(g_ctx);
+    int n_segments = whisper_full_n_segments_from_state(state);
     for (int i = 0; i < n_segments; i++) {
-        const char *text = whisper_full_get_segment_text(g_ctx, i);
+        const char *text = whisper_full_get_segment_text_from_state(state, i);
         if (text) {
             result += text;
         }
     }
+
+    whisper_free_state(state);
 
     long t_collect_done = now_ms();
     LOGI("[LATENCY] collect segments: %ld ms  (%d segments)",
