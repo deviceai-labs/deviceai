@@ -1,6 +1,6 @@
 # DeviceAI Runtime
 
-**On-device AI runtime for mobile and desktop. Ship speech recognition and synthesis across Kotlin Multiplatform, Android, iOS, Flutter, and React Native — no cloud, no latency, no privacy risk.**
+**On-device AI runtime for Kotlin, iOS, Flutter, and React Native. Ship speech recognition and synthesis on Android, iOS, and Desktop — no cloud, no latency, no privacy risk.**
 
 [![Build](https://github.com/deviceai-labs/runtime-kmp/actions/workflows/ci.yml/badge.svg)](https://github.com/deviceai-labs/runtime-kmp/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
@@ -12,19 +12,22 @@
 
 ## What's available
 
-| Module | Platform | Distribution | Status |
-|--------|----------|--------------|--------|
-| `kmp/core` | Android · iOS · Desktop | Maven Central `dev.deviceai:kmp-core` | ✅ Available |
-| `kmp/speech` | Android · iOS · Desktop | Maven Central `dev.deviceai:kmp-speech` | ✅ Available |
-| `kmp/llm` | Android · iOS · Desktop | Maven Central `dev.deviceai:kmp-llm` | 🚧 In development |
-| `android/speech` | Android only | Maven Central `dev.deviceai:android-speech` | 🗓 Planned |
-| `ios/speech` | iOS only | Swift Package Index | 🗓 Planned |
-| `flutter/speech` | Android + iOS | pub.dev `deviceai_speech` | 🗓 Planned |
-| `react-native/speech` | Android + iOS | npm `react-native-deviceai-speech` | 🗓 Planned |
+| Module | Who it's for | Distribution | Status |
+|--------|-------------|--------------|--------|
+| `kmp/core` | Kotlin (Android · iOS · Desktop) | Maven Central `dev.deviceai:kmp-core` | ✅ Available |
+| `kmp/speech` | Kotlin (Android · iOS · Desktop) | Maven Central `dev.deviceai:kmp-speech` | ✅ Available |
+| `kmp/llm` | Kotlin (Android · iOS · Desktop) | Maven Central `dev.deviceai:kmp-llm` | 🚧 In development |
+| `ios/speech` | Swift (iOS only) | Swift Package Index | 🗓 Planned |
+| `flutter/speech` | Flutter (Android + iOS) | pub.dev `deviceai_speech` | 🗓 Planned |
+| `react-native/speech` | React Native (Android + iOS) | npm `react-native-deviceai-speech` | 🗓 Planned |
 
 **✅ Available** — published and usable today.
-**🚧 In development** — directory and Gradle module exist; API and native integration not yet complete.
-**🗓 Planned** — stub directory exists to signal intent; no implementation yet.
+**🚧 In development** — module exists; API and native integration not yet complete.
+**🗓 Planned** — stub exists to signal intent; no implementation yet.
+
+The Kotlin SDK (`kmp/`) works in both **Kotlin Multiplatform projects and Android-only projects** — it is pure Kotlin with no framework opinion. Lifecycle management, ViewModel wiring, and DI are intentionally left to the app. The SDK exposes `init`, `shutdown`, and `clear` — you integrate them however fits your architecture.
+
+Platform wrappers (`ios/`, `flutter/`, `react-native/`) exist only where there is a language boundary: Swift, Dart, and JavaScript cannot consume Kotlin directly.
 
 ---
 
@@ -33,25 +36,19 @@
 ```
 deviceai/
 ├── kmp/
-│   ├── core/       dev.deviceai:kmp-core      ✅  shared model management, storage, logging
-│   ├── speech/     dev.deviceai:kmp-speech    ✅  STT (Whisper) + TTS (Piper) for KMP
-│   └── llm/        dev.deviceai:kmp-llm       🚧  LLM inference via llama.cpp
-├── android/
-│   └── speech/     dev.deviceai:android-speech  🗓  Jetpack ViewModel wrapper around kmp/speech
+│   ├── core/       dev.deviceai:kmp-core    ✅  model management, storage, logging
+│   ├── speech/     dev.deviceai:kmp-speech  ✅  STT (Whisper) + TTS (Piper)
+│   └── llm/        dev.deviceai:kmp-llm     🚧  LLM inference via llama.cpp
 ├── ios/
-│   └── speech/     Swift Package               🗓  Swift async/await wrapper around kmp/speech
+│   └── speech/     Swift Package            🗓  Swift async/await wrapper
 ├── flutter/
-│   └── speech/     pub.dev: deviceai_speech    🗓  Flutter plugin bridging android + ios
+│   └── speech/     pub.dev: deviceai_speech 🗓  Flutter plugin
 ├── react-native/
-│   └── speech/     npm: react-native-deviceai-speech  🗓  TurboModule bridging android + ios
+│   └── speech/     npm: react-native-deviceai-speech  🗓  TurboModule
 └── samples/
     ├── composeApp/ Compose Multiplatform demo  ✅
     └── iosApp/     native iOS shell            ✅
 ```
-
-The KMP modules (`kmp/`) ship to Maven Central and cover all platforms in a single dependency.
-The platform wrappers (`android/`, `ios/`, `flutter/`, `react-native/`) are for teams that want
-idiomatic, registry-native packages without adopting Kotlin Multiplatform.
 
 ---
 
@@ -121,21 +118,20 @@ DeviceAIRuntime.configure(Environment.DEVELOPMENT)   ← one-time SDK init
 | Environment-aware logging | ✅ |
 | Offline — zero cloud dependency | ✅ |
 | LLM inference | 🚧 In development |
-| Android Jetpack wrapper | 🗓 Planned |
 | Swift Package | 🗓 Planned |
 | Flutter plugin | 🗓 Planned |
 | React Native module | 🗓 Planned |
 
 ---
 
-## Integration — Kotlin Multiplatform
+## Integration — Kotlin (Android, KMP, Desktop)
 
-5 minutes to first transcription. Works on Android, iOS, and Desktop from a single dependency.
+Works in any Kotlin project. No KMP setup required for Android-only projects.
 
 ### Step 1 — Add dependencies
 
 ```kotlin
-// build.gradle.kts (your KMP module)
+// build.gradle.kts
 implementation("dev.deviceai:kmp-core:<version>")
 implementation("dev.deviceai:kmp-speech:<version>")
 ```
@@ -148,7 +144,7 @@ No extra repository config needed — both artifacts are on Maven Central.
 
 Call `DeviceAIRuntime.configure()` **once**, before any other SDK call.
 
-#### Android — `Application.onCreate()` or `MainActivity.onCreate()`
+#### Android
 
 ```kotlin
 import dev.deviceai.core.DeviceAIRuntime
@@ -159,18 +155,14 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // 1. Configure environment (switch to PRODUCTION for release builds)
         DeviceAIRuntime.configure(Environment.DEVELOPMENT)
-
-        // 2. Android needs a Context for file storage — must come after configure()
-        PlatformStorage.initialize(this)
-
+        PlatformStorage.initialize(this) // Android needs a Context for file storage
         setContent { App() }
     }
 }
 ```
 
-#### iOS — `MainViewController.kt`
+#### iOS (Kotlin side of KMP project)
 
 ```kotlin
 import dev.deviceai.core.DeviceAIRuntime
@@ -182,7 +174,7 @@ fun MainViewController(): UIViewController {
 }
 ```
 
-> **Info.plist** — add the microphone usage description and ProMotion key:
+> **Info.plist** — add the microphone usage description:
 > ```xml
 > <key>NSMicrophoneUsageDescription</key>
 > <string>Used for on-device speech recognition.</string>
@@ -190,7 +182,7 @@ fun MainViewController(): UIViewController {
 > <true/>
 > ```
 
-#### Desktop — `main.kt`
+#### Desktop
 
 ```kotlin
 import dev.deviceai.core.DeviceAIRuntime
@@ -211,7 +203,6 @@ fun main() = application {
 ```kotlin
 import dev.deviceai.models.ModelRegistry
 
-// Returns immediately if already downloaded, otherwise streams from HuggingFace
 val model = ModelRegistry.getOrDownload("ggml-tiny.en.bin") { progress ->
     println("${progress.percentComplete.toInt()}% — ${progress.bytesDownloaded / 1_000_000}MB")
 }
@@ -227,17 +218,13 @@ val model = ModelRegistry.getOrDownload("ggml-tiny.en.bin") { progress ->
 import dev.deviceai.SpeechBridge
 import dev.deviceai.SttConfig
 
-// Initialize the STT engine with the downloaded model
 SpeechBridge.initStt(model.modelPath, SttConfig(language = "en", useGpu = true))
 
-// Transcribe a FloatArray of 16kHz mono PCM samples
-val text: String = SpeechBridge.transcribeAudio(samples)
-
-// Or transcribe a WAV file directly
+val text: String = SpeechBridge.transcribeAudio(samples) // FloatArray of 16kHz mono PCM
+// or
 val text: String = SpeechBridge.transcribe("/path/to/audio.wav")
 
-// Clean up when done
-SpeechBridge.shutdownStt()
+SpeechBridge.shutdownStt() // call from onCleared(), onDestroy(), or equivalent
 ```
 
 ---
@@ -271,7 +258,7 @@ SpeechBridge.shutdownTts()
 | `DEVELOPMENT` | `DEBUG` | Everything — debug, info, warnings, errors |
 | `PRODUCTION` | `WARN` | Warnings and errors only |
 
-You can forward SDK logs to your own backend (Crashlytics, Datadog, Sentry, etc.):
+Forward SDK logs to your own backend (Crashlytics, Datadog, Sentry, etc.):
 
 ```kotlin
 DeviceAIRuntime.configure(
@@ -363,22 +350,17 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for a deep-dive on the native layer, CMak
 - [ ] Streaming token generation
 - [ ] Will publish: `dev.deviceai:kmp-llm`
 
-### `android/speech` 🗓 Planned
-- [ ] Jetpack ViewModel + Lifecycle-aware wrappers around `kmp/speech`
-- [ ] For Android-only teams that don't want a KMP setup
-- [ ] Will publish: `dev.deviceai:android-speech`
-
 ### `ios/speech` 🗓 Planned
 - [ ] Swift `async`/`await` + Combine wrappers around the KMP XCFramework
-- [ ] For iOS-only teams that want a pure Swift dependency
+- [ ] For Swift-only iOS teams that want a pure Swift dependency
 - [ ] Will distribute via Swift Package Index
 
 ### `flutter/speech` 🗓 Planned
-- [ ] Flutter plugin bridging `android/speech` and `ios/speech`
+- [ ] Flutter plugin bridging the Kotlin SDK (Android) and Swift Package (iOS)
 - [ ] Will publish: pub.dev `deviceai_speech`
 
 ### `react-native/speech` 🗓 Planned
-- [ ] TurboModule bridging `android/speech` and `ios/speech`
+- [ ] TurboModule bridging the Kotlin SDK (Android) and Swift Package (iOS)
 - [ ] Will publish: npm `react-native-deviceai-speech`
 
 ---
@@ -387,7 +369,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for a deep-dive on the native layer, CMak
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). Issues and PRs welcome.
 
-Platform wrapper contributions (`android/`, `ios/`, `flutter/`, `react-native/`) are especially
+Platform wrapper contributions (`ios/`, `flutter/`, `react-native/`) are especially
 welcome — each stub directory contains a README with the expected API surface.
 
 ---

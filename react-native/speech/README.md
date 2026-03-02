@@ -22,4 +22,5 @@ yarn add react-native-deviceai-speech
 ## Contributing
 
 Implementation PRs welcome. The module uses React Native's New Architecture (TurboModules / JSI)
-to bridge JS calls to the native `android/speech` AAR and `ios/speech` XCFramework.
+to bridge JS calls to the Kotlin SDK (`kmp/speech`) on Android and the Swift Package (`ios/speech`)
+on iOS.

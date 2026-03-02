@@ -21,5 +21,5 @@ dependencies:
 
 ## Contributing
 
-Implementation PRs welcome. The plugin bridges Dart to the native `android/speech` AAR and `ios/speech`
-XCFramework via Flutter's platform channel mechanism.
+Implementation PRs welcome. The plugin bridges Dart to the Kotlin SDK (`kmp/speech`) on Android
+and the Swift Package (`ios/speech`) on iOS via Flutter's platform channel mechanism.
