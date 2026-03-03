@@ -61,7 +61,7 @@ class LlmViewModel {
     private val _isGenerating = MutableStateFlow(false)
     val isGenerating: StateFlow<Boolean> = _isGenerating.asStateFlow()
 
-    val suggestedModel: LlmModelInfo = LlmCatalog.LLAMA_3_2_1B_INSTRUCT_Q4
+    val suggestedModel: LlmModelInfo = LlmCatalog.SMOLLM2_360M_INSTRUCT_Q4
 
     private var nextId = 0L
     private fun nextMessageId() = nextId++

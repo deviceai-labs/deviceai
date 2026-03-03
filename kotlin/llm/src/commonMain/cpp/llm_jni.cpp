@@ -45,6 +45,31 @@ static void cleanup() {
     if (g_model)   { llama_model_free(g_model);      g_model   = nullptr; }
 }
 
+// ═══════════════════════════════════════════════════════════════
+//              Chat-template prompt formatting
+// Uses the model's embedded Jinja template via llama_chat_apply_template,
+// which handles ChatML, Llama 3, Gemma, Mistral, etc. automatically.
+// Falls back to returning the raw prompt on error.
+// ═══════════════════════════════════════════════════════════════
+
+static std::string build_prompt(const std::string &prompt, const std::string &systemPrompt) {
+    if (!g_model) return prompt;
+
+    std::vector<llama_chat_message> msgs;
+    if (!systemPrompt.empty()) msgs.push_back({"system", systemPrompt.c_str()});
+    msgs.push_back({"user", prompt.c_str()});
+
+    const char *tmpl = llama_model_chat_template(g_model, /*name=*/nullptr);
+
+    // First pass: get required buffer size
+    int32_t sz = llama_chat_apply_template(tmpl, msgs.data(), msgs.size(), /*add_ass=*/true, nullptr, 0);
+    if (sz <= 0) return prompt;  // no template or error — use raw prompt
+
+    std::string out(sz, '\0');
+    llama_chat_apply_template(tmpl, msgs.data(), msgs.size(), /*add_ass=*/true, out.data(), sz);
+    return out;
+}
+
 static llama_sampler *build_sampler(float temperature, float top_p, int top_k, float repeat_penalty) {
     auto *chain = llama_sampler_chain_init(llama_sampler_chain_default_params());
     llama_sampler_chain_add(chain, llama_sampler_init_top_k(top_k));
@@ -193,10 +218,7 @@ Java_dev_deviceai_llm_LlmBridge_nativeGenerate(
     g_cancel = false;
     std::string prompt       = jstring_to_std(env, jPrompt);
     std::string systemPrompt = jstring_to_std(env, jSystemPrompt);
-
-    std::string full = systemPrompt.empty()
-        ? prompt
-        : "<|system|>\n" + systemPrompt + "\n<|user|>\n" + prompt + "\n<|assistant|>\n";
+    std::string full         = build_prompt(prompt, systemPrompt);
 
     std::string result = do_generate(
         full, maxTokens, temperature, topP, topK, repeatPenalty,
@@ -217,10 +239,7 @@ Java_dev_deviceai_llm_LlmBridge_nativeGenerateStream(
     g_cancel = false;
     std::string prompt       = jstring_to_std(env, jPrompt);
     std::string systemPrompt = jstring_to_std(env, jSystemPrompt);
-
-    std::string full = systemPrompt.empty()
-        ? prompt
-        : "<|system|>\n" + systemPrompt + "\n<|user|>\n" + prompt + "\n<|assistant|>\n";
+    std::string full         = build_prompt(prompt, systemPrompt);
 
     // Resolve LlmStream callback methods
     jclass cbClass   = env->GetObjectClass(jCallback);
@@ -249,14 +268,8 @@ Java_dev_deviceai_llm_LlmBridge_nativeGenerateStream(
         }
     );
 
-    // Notify complete
-    jclass resultClass = env->FindClass("dev/deviceai/llm/LlmResult");
-    // Pass result as JSON string via onComplete with a minimal LlmResult
-    // (full object construction omitted for brevity — wire in Kotlin layer)
-    jstring jFull = env->NewStringUTF(fullResult.c_str());
-    env->CallVoidMethod(globalCb, onToken, jFull);  // sentinel not needed; Kotlin handles assembly
-    env->DeleteLocalRef(jFull);
-
+    // onComplete is assembled by the Kotlin layer (LlmBridge.android.kt) after
+    // nativeGenerateStream returns — no extra JNI call needed here.
     env->DeleteGlobalRef(globalCb);
 }
 
