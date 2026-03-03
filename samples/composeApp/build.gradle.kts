@@ -81,6 +81,12 @@ android {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
+        jniLibs {
+            // whisper.cpp and llama.cpp both build ggml shared libs with the same names;
+            // pick the first encountered version (speech module wins)
+            pickFirsts += "lib/**/libggml*.so"
+            pickFirsts += "lib/**/libllama*.so"
+        }
     }
 }
 

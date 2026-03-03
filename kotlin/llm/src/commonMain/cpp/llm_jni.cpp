@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include <atomic>
+#include <functional>
 #include <cstring>
 
 #ifdef ANDROID
@@ -50,7 +51,6 @@ static llama_sampler *build_sampler(float temperature, float top_p, int top_k, f
     llama_sampler_chain_add(chain, llama_sampler_init_top_p(top_p, 1));
     llama_sampler_chain_add(chain, llama_sampler_init_temp(temperature));
     llama_sampler_chain_add(chain, llama_sampler_init_penalties(
-        llama_n_vocab(g_model), LLAMA_TOKEN_NULL, LLAMA_TOKEN_NULL,
         64,            // last_n penalty window
         repeat_penalty,
         0.0f,          // freq penalty
@@ -77,13 +77,15 @@ static std::string do_generate(
 ) {
     if (!g_model || !g_ctx) return "";
 
-    llama_context_reset(g_ctx);
+    llama_perf_context_reset(g_ctx);
+
+    const llama_vocab *vocab = llama_model_get_vocab(g_model);
 
     // Tokenize
     int n_prompt_max = llama_n_ctx(g_ctx);
     std::vector<llama_token> tokens(n_prompt_max);
     int n_tokens = llama_tokenize(
-        g_model,
+        vocab,
         full_prompt.c_str(),
         (int)full_prompt.size(),
         tokens.data(),
@@ -115,9 +117,9 @@ static std::string do_generate(
         llama_token token = llama_sampler_sample(sampler, g_ctx, -1);
         llama_sampler_accept(sampler, token);
 
-        if (llama_token_is_eog(g_model, token)) break;
+        if (llama_vocab_is_eog(vocab, token)) break;
 
-        int n = llama_token_to_piece(g_model, token, piece_buf, sizeof(piece_buf), 0, true);
+        int n = llama_token_to_piece(vocab, token, piece_buf, sizeof(piece_buf), 0, true);
         if (n < 0) break;
 
         std::string piece(piece_buf, n);
