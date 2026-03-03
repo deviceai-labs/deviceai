@@ -40,8 +40,20 @@ static llama_sampler *build_sampler(float temperature, float top_p, int top_k, f
 static std::string build_full_prompt(const char *prompt, const char *system_prompt) {
     std::string sp(system_prompt ? system_prompt : "");
     std::string p(prompt ? prompt : "");
-    if (sp.empty()) return p;
-    return "<|system|>\n" + sp + "\n<|user|>\n" + p + "\n<|assistant|>\n";
+    if (!g_model) return p;
+
+    std::vector<llama_chat_message> msgs;
+    if (!sp.empty()) msgs.push_back({"system", sp.c_str()});
+    msgs.push_back({"user", p.c_str()});
+
+    const char *tmpl = llama_model_chat_template(g_model, nullptr);
+
+    int32_t sz = llama_chat_apply_template(tmpl, msgs.data(), msgs.size(), true, nullptr, 0);
+    if (sz <= 0) return p;
+
+    std::string out(sz, '\0');
+    llama_chat_apply_template(tmpl, msgs.data(), msgs.size(), true, out.data(), sz);
+    return out;
 }
 
 static std::string do_generate(
