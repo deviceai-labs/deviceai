@@ -1,10 +1,10 @@
 name: Publish
 
 # Triggers on module-scoped tags:
-#   kotlin/vX.Y.Z          → publishes kotlin/core, kotlin/speech, kotlin/llm
-#   ios-speech/vX.Y.Z      → publishes ios/speech  (placeholder)
-#   flutter-speech/vX.Y.Z  → publishes flutter/speech  (placeholder)
-#   rn-speech/vX.Y.Z       → publishes react-native/speech  (placeholder)
+#   kotlin/vX.Y.Z       → publishes kotlin/core, kotlin/speech, kotlin/llm
+#   ios/vX.Y.Z          → publishes ios/speech  (placeholder)
+#   flutter/vX.Y.Z      → publishes flutter/speech  (placeholder)
+#   react-native/vX.Y.Z → publishes react-native/speech  (placeholder)
 #
 # Cancels any in-progress run for the same tag prefix so a corrected tag
 # push doesn't queue behind a stale run.
@@ -13,13 +13,13 @@ on:
   push:
     tags:
       - 'kotlin/v*'
-      - 'ios-speech/v*'
-      - 'flutter-speech/v*'
-      - 'rn-speech/v*'
+      - 'ios/v*'
+      - 'flutter/v*'
+      - 'react-native/v*'
   workflow_dispatch:
     inputs:
       module:
-        description: 'Module to publish (kotlin | ios-speech | flutter-speech | rn-speech)'
+        description: 'Module to publish (kotlin | ios | flutter | react-native)'
         required: true
         default: 'kotlin'
       version:
@@ -95,23 +95,25 @@ jobs:
 
   # ── Placeholder jobs for future platform SDKs ────────────────────────────
 
-  publish-ios-speech:
+  # ── Placeholder jobs for future platform SDKs ────────────────────────────
+
+  publish-ios:
     name: Publish ios/speech
-    if: startsWith(github.ref, 'refs/tags/ios-speech/') || (github.event_name == 'workflow_dispatch' && github.event.inputs.module == 'ios-speech')
+    if: startsWith(github.ref, 'refs/tags/ios/') || (github.event_name == 'workflow_dispatch' && github.event.inputs.module == 'ios')
     runs-on: macos-latest
     steps:
       - run: echo "ios/speech publish not yet implemented"
 
-  publish-flutter-speech:
+  publish-flutter:
     name: Publish flutter/speech
-    if: startsWith(github.ref, 'refs/tags/flutter-speech/') || (github.event_name == 'workflow_dispatch' && github.event.inputs.module == 'flutter-speech')
+    if: startsWith(github.ref, 'refs/tags/flutter/') || (github.event_name == 'workflow_dispatch' && github.event.inputs.module == 'flutter')
     runs-on: ubuntu-latest
     steps:
       - run: echo "flutter/speech publish not yet implemented"
 
-  publish-rn-speech:
+  publish-react-native:
     name: Publish react-native/speech
-    if: startsWith(github.ref, 'refs/tags/rn-speech/') || (github.event_name == 'workflow_dispatch' && github.event.inputs.module == 'rn-speech')
+    if: startsWith(github.ref, 'refs/tags/react-native/') || (github.event_name == 'workflow_dispatch' && github.event.inputs.module == 'react-native')
     runs-on: ubuntu-latest
     steps:
       - run: echo "react-native/speech publish not yet implemented"
