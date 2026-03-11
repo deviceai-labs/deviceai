@@ -15,6 +15,7 @@
 #include "deviceai_speech_engine.h"
 #include "whisper.h"
 #include "piper.hpp"
+#include "onnxruntime_cxx_api.h"
 
 #include <string>
 #include <vector>
@@ -77,6 +78,23 @@ static bool                     g_tts_initialized = false;
 static std::mutex               g_tts_mutex;
 static std::atomic<bool>        g_tts_cancel{false};
 static std::atomic<int>         g_tts_sample_rate{22050};
+
+// ─── VAD global state ─────────────────────────────────────────────────────────
+// Silero VAD v4: LSTM-based, 32ms windows (512 samples @ 16kHz).
+// State tensors (h, c) are maintained between windows for streaming use.
+// Reset between independent audio sessions via dai_vad_reset().
+
+static Ort::Env                      g_vad_env{ORT_LOGGING_LEVEL_WARNING, "DeviceAI-VAD"};
+static std::unique_ptr<Ort::Session> g_vad_session;
+static float                         g_vad_threshold  = 0.5f;
+static int                           g_vad_sample_rate_val = 16000;
+static std::vector<float>            g_vad_h(2 * 1 * 64, 0.0f);  // LSTM hidden [2,1,64]
+static std::vector<float>            g_vad_c(2 * 1 * 64, 0.0f);  // LSTM cell   [2,1,64]
+static std::atomic<bool>             g_vad_in_speech{false};
+static std::mutex                    g_vad_mutex;
+
+static const int VAD_WINDOW = 512;   // 32ms at 16kHz
+static const int VAD_PAD    = 10;    // ~320ms end-of-speech padding (10 * 512 samples)
 
 // ═══════════════════════════════════════════════════════════════════════════
 // MARK: - Shared C string helpers
@@ -232,30 +250,76 @@ static void resample_to_16k(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// MARK: - STT core logic (internal, no JNI/FFI types)
+// MARK: - Silero VAD (internal helpers)
 // ═══════════════════════════════════════════════════════════════════════════
 
 /**
- * Adaptive energy-based VAD.
+ * Run Silero VAD on a single 512-sample window.
  *
- * Computes per-frame RMS, derives a noise floor from the quietest 10% of frames,
- * sets speech threshold at 4× the noise floor (min 0.02), then crops the audio
- * to the detected speech region with padding.
+ * Updates g_vad_h / g_vad_c LSTM state in-place so consecutive calls
+ * form a coherent stream. Call dai_vad_reset() to clear state between
+ * independent audio sessions.
  *
- * This prevents Whisper from looping on trailing silence and significantly
- * reduces RTF on short utterances (measured 0.14x on Snapdragon 720G with whisper-tiny).
- *
- * @param audio   Input/output samples (modified in-place if speech found)
- * @return true if speech was detected, false if the audio is silence
+ * @return Speech probability [0.0, 1.0], or -1.0 if VAD not initialized.
  */
-static bool apply_vad(std::vector<float> &audio) {
-    const int FRAME = 480;  // 30 ms at 16 kHz
-    const int PAD   = 10;   // ~300 ms padding around detected speech
+static float run_silero_window(const float *samples, int n_samples) {
+    if (!g_vad_session) return -1.0f;
+
+    auto mem_info = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
+
+    // Input: [1, n_samples]
+    std::array<int64_t, 2> input_shape  = {1, n_samples};
+    // sr: [1]
+    std::array<int64_t, 1> sr_shape     = {1};
+    // h, c: [2, 1, 64]
+    std::array<int64_t, 3> state_shape  = {2, 1, 64};
+
+    int64_t sr_val = g_vad_sample_rate_val;
+
+    Ort::Value inputs[4] = {
+        Ort::Value::CreateTensor<float>(
+            mem_info, const_cast<float *>(samples), n_samples,
+            input_shape.data(), input_shape.size()),
+        Ort::Value::CreateTensor<int64_t>(
+            mem_info, &sr_val, 1,
+            sr_shape.data(), sr_shape.size()),
+        Ort::Value::CreateTensor<float>(
+            mem_info, g_vad_h.data(), g_vad_h.size(),
+            state_shape.data(), state_shape.size()),
+        Ort::Value::CreateTensor<float>(
+            mem_info, g_vad_c.data(), g_vad_c.size(),
+            state_shape.data(), state_shape.size()),
+    };
+
+    const char *input_names[]  = {"input", "sr", "h", "c"};
+    const char *output_names[] = {"output", "hn", "cn"};
+
+    auto outputs = g_vad_session->Run(
+        Ort::RunOptions{nullptr},
+        input_names,  inputs,  4,
+        output_names, 3
+    );
+
+    // Update LSTM state for next window
+    float *hn = outputs[1].GetTensorMutableData<float>();
+    float *cn = outputs[2].GetTensorMutableData<float>();
+    std::copy(hn, hn + g_vad_h.size(), g_vad_h.begin());
+    std::copy(cn, cn + g_vad_c.size(), g_vad_c.begin());
+
+    return *outputs[0].GetTensorMutableData<float>();
+}
+
+/**
+ * Adaptive energy-based VAD (fallback when Silero not initialized).
+ * Kept as a fallback — used when g_vad_session == nullptr.
+ */
+static bool apply_energy_vad(std::vector<float> &audio) {
+    const int FRAME = 480;  // 30ms at 16kHz
+    const int PAD   = 10;
 
     int n_frames = static_cast<int>(audio.size()) / FRAME;
     if (n_frames == 0) return false;
 
-    // Per-frame RMS
     std::vector<float> frame_rms(n_frames);
     for (int f = 0; f < n_frames; f++) {
         const float *p = audio.data() + f * FRAME;
@@ -264,14 +328,10 @@ static bool apply_vad(std::vector<float> &audio) {
         frame_rms[f] = std::sqrt(sum / FRAME);
     }
 
-    // Noise floor = 10th-percentile RMS (quietest 10% of frames)
     std::vector<float> sorted_rms = frame_rms;
     std::sort(sorted_rms.begin(), sorted_rms.end());
     float noise_floor = sorted_rms[std::max(0, n_frames / 10)];
-
-    // Speech threshold: 4× noise floor, minimum 0.02
-    float threshold = std::max(0.02f, noise_floor * 4.0f);
-    STT_LOGD("VAD: noise_floor=%.4f threshold=%.4f", noise_floor, threshold);
+    float threshold   = std::max(0.02f, noise_floor * 4.0f);
 
     int first_speech = -1, last_speech = -1;
     for (int f = 0; f < n_frames; f++) {
@@ -280,23 +340,64 @@ static bool apply_vad(std::vector<float> &audio) {
             last_speech = f;
         }
     }
-
-    if (first_speech < 0) {
-        STT_LOGI("VAD: no speech detected");
-        return false;
-    }
+    if (first_speech < 0) return false;
 
     int start = std::max(0,        first_speech - PAD) * FRAME;
     int end   = std::min(n_frames, last_speech  + PAD + 1) * FRAME;
+    audio = std::vector<float>(audio.begin() + start, audio.begin() + end);
+    return true;
+}
 
-    float before_sec = static_cast<float>(audio.size())   / WHISPER_SAMPLE_RATE;
-    float after_sec  = static_cast<float>(end - start) / WHISPER_SAMPLE_RATE;
-    STT_LOGI("VAD: trimmed %.2fs → %.2fs (frames %d–%d)",
-             before_sec, after_sec, first_speech, last_speech);
+/**
+ * Apply VAD to a batch audio buffer (used internally by STT).
+ *
+ * Dispatches to Silero if initialized, otherwise energy-based fallback.
+ * Resets Silero state before batch processing (each STT call is independent).
+ */
+static bool apply_vad(std::vector<float> &audio) {
+    if (!g_vad_session) {
+        STT_LOGD("VAD: using energy-based fallback (Silero not initialized)");
+        return apply_energy_vad(audio);
+    }
+
+    // Reset LSTM state for this independent batch
+    std::fill(g_vad_h.begin(), g_vad_h.end(), 0.0f);
+    std::fill(g_vad_c.begin(), g_vad_c.end(), 0.0f);
+
+    int n_windows = static_cast<int>(audio.size()) / VAD_WINDOW;
+    if (n_windows == 0) return false;
+
+    std::vector<float> probs(n_windows);
+    for (int i = 0; i < n_windows; i++)
+        probs[i] = run_silero_window(audio.data() + i * VAD_WINDOW, VAD_WINDOW);
+
+    int first_speech = -1, last_speech = -1;
+    for (int i = 0; i < n_windows; i++) {
+        if (probs[i] >= g_vad_threshold) {
+            if (first_speech < 0) first_speech = i;
+            last_speech = i;
+        }
+    }
+
+    if (first_speech < 0) {
+        STT_LOGI("Silero VAD: no speech detected");
+        return false;
+    }
+
+    int start = std::max(0,         first_speech - VAD_PAD) * VAD_WINDOW;
+    int end   = std::min(n_windows, last_speech  + VAD_PAD + 1) * VAD_WINDOW;
+
+    float before_sec = static_cast<float>(audio.size()) / WHISPER_SAMPLE_RATE;
+    float after_sec  = static_cast<float>(end - start)  / WHISPER_SAMPLE_RATE;
+    STT_LOGI("Silero VAD: trimmed %.2fs → %.2fs", before_sec, after_sec);
 
     audio = std::vector<float>(audio.begin() + start, audio.begin() + end);
     return true;
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// MARK: - STT core logic (internal, no JNI/FFI types)
+// ═══════════════════════════════════════════════════════════════════════════
 
 /**
  * Build JSON result string from transcription segments.
@@ -730,6 +831,101 @@ void dai_tts_shutdown(void) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// MARK: - Public C API — VAD
+// ═══════════════════════════════════════════════════════════════════════════
+
+int dai_vad_init(const char *model_path, float threshold, int sample_rate) {
+    std::lock_guard<std::mutex> lock(g_vad_mutex);
+
+    g_vad_session.reset();
+    g_vad_threshold       = threshold;
+    g_vad_sample_rate_val = sample_rate;
+    std::fill(g_vad_h.begin(), g_vad_h.end(), 0.0f);
+    std::fill(g_vad_c.begin(), g_vad_c.end(), 0.0f);
+    g_vad_in_speech = false;
+
+    try {
+        Ort::SessionOptions opts;
+        opts.SetIntraOpNumThreads(1);
+        opts.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
+        g_vad_session = std::make_unique<Ort::Session>(g_vad_env, model_path, opts);
+        STT_LOGI("Silero VAD initialized: threshold=%.2f rate=%d", threshold, sample_rate);
+        return 1;
+    } catch (const std::exception &e) {
+        STT_LOGE("VAD init failed: %s", e.what());
+        return 0;
+    }
+}
+
+int dai_vad_is_speech(const float *samples, int n_samples) {
+    std::lock_guard<std::mutex> lock(g_vad_mutex);
+    if (!g_vad_session) return 0;
+
+    // Reset state for single-shot check
+    std::fill(g_vad_h.begin(), g_vad_h.end(), 0.0f);
+    std::fill(g_vad_c.begin(), g_vad_c.end(), 0.0f);
+
+    int n_windows = n_samples / VAD_WINDOW;
+    if (n_windows == 0) return 0;
+
+    float total = 0.0f;
+    for (int i = 0; i < n_windows; i++)
+        total += run_silero_window(samples + i * VAD_WINDOW, VAD_WINDOW);
+
+    return (total / n_windows) >= g_vad_threshold ? 1 : 0;
+}
+
+void dai_vad_process_stream(
+    const float            *samples,
+    int                     n_samples,
+    dai_vad_speech_start_cb on_speech_start,
+    dai_vad_speech_end_cb   on_speech_end,
+    void                   *user_data
+) {
+    std::lock_guard<std::mutex> lock(g_vad_mutex);
+    if (!g_vad_session) return;
+
+    // Process in VAD_WINDOW chunks; state carries across chunks (streaming)
+    static int silence_frames = 0;
+
+    int n_windows = n_samples / VAD_WINDOW;
+    for (int i = 0; i < n_windows; i++) {
+        float prob = run_silero_window(samples + i * VAD_WINDOW, VAD_WINDOW);
+        bool  is_speech = prob >= g_vad_threshold;
+
+        if (is_speech) {
+            silence_frames = 0;
+            if (!g_vad_in_speech.exchange(true)) {
+                if (on_speech_start) on_speech_start(user_data);
+            }
+        } else if (g_vad_in_speech.load()) {
+            silence_frames++;
+            // End of speech after VAD_PAD consecutive silent windows (~320ms)
+            if (silence_frames >= VAD_PAD) {
+                silence_frames = 0;
+                g_vad_in_speech = false;
+                if (on_speech_end) on_speech_end(user_data);
+            }
+        }
+    }
+}
+
+void dai_vad_reset(void) {
+    std::lock_guard<std::mutex> lock(g_vad_mutex);
+    std::fill(g_vad_h.begin(), g_vad_h.end(), 0.0f);
+    std::fill(g_vad_c.begin(), g_vad_c.end(), 0.0f);
+    g_vad_in_speech = false;
+}
+
+void dai_vad_shutdown(void) {
+    std::lock_guard<std::mutex> lock(g_vad_mutex);
+    if (g_vad_session) {
+        g_vad_session.reset();
+        STT_LOGI("Silero VAD shutdown");
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // MARK: - Shared utilities
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -742,6 +938,7 @@ void dai_speech_free_audio(int16_t *ptr) {
 }
 
 void dai_speech_shutdown_all(void) {
+    dai_vad_shutdown();
     dai_stt_shutdown();
     dai_tts_shutdown();
 }

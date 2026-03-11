@@ -13,6 +13,23 @@ actual object SpeechBridge {
     }
 
     // ══════════════════════════════════════════════════════════════
+    //              VOICE ACTIVITY DETECTION (VAD)
+    // ══════════════════════════════════════════════════════════════
+
+    actual fun initVad(modelPath: String, config: VadConfig): Boolean =
+        nativeInitVad(modelPath, config.threshold, config.sampleRate)
+
+    actual fun isSpeech(samples: FloatArray): Boolean =
+        nativeIsSpeech(samples)
+
+    actual fun processVadStream(samples: FloatArray, callback: VadCallback) =
+        nativeProcessVadStream(samples, callback)
+
+    actual fun resetVad() = nativeResetVad()
+
+    actual fun shutdownVad() = nativeShutdownVad()
+
+    // ══════════════════════════════════════════════════════════════
     //                    SPEECH-TO-TEXT (STT)
     // ══════════════════════════════════════════════════════════════
 
@@ -91,6 +108,7 @@ actual object SpeechBridge {
     }
 
     actual fun shutdown() {
+        shutdownVad()
         shutdownStt()
         shutdownTts()
     }
@@ -98,6 +116,13 @@ actual object SpeechBridge {
     // ══════════════════════════════════════════════════════════════
     //                    NATIVE DECLARATIONS
     // ══════════════════════════════════════════════════════════════
+
+    // VAD
+    private external fun nativeInitVad(modelPath: String, threshold: Float, sampleRate: Int): Boolean
+    private external fun nativeIsSpeech(samples: FloatArray): Boolean
+    private external fun nativeProcessVadStream(samples: FloatArray, callback: VadCallback)
+    private external fun nativeResetVad()
+    private external fun nativeShutdownVad()
 
     // STT
     private external fun nativeInitStt(

@@ -6,6 +6,51 @@ import androidx.compose.runtime.Composable
 expect object SpeechBridge {
 
     // ══════════════════════════════════════════════════════════════
+    //              VOICE ACTIVITY DETECTION (VAD)
+    // ══════════════════════════════════════════════════════════════
+
+    /**
+     * Load a Silero VAD model. Optional but recommended — enables neural VAD
+     * for both standalone voice detection and pre-processing inside STT.
+     *
+     * Model file (~1MB) is downloaded separately via ModelRegistry.
+     *
+     * @param modelPath Absolute path to silero_vad.onnx
+     * @param config    Threshold and sample rate configuration
+     * @return true if initialization succeeded
+     */
+    fun initVad(modelPath: String, config: VadConfig = VadConfig()): Boolean
+
+    /**
+     * Determine whether a PCM buffer contains speech.
+     *
+     * @param samples Float32 audio at the sample rate from VadConfig
+     * @return true if speech detected above the configured threshold
+     */
+    fun isSpeech(samples: FloatArray): Boolean
+
+    /**
+     * Process an audio chunk and fire speech start/end callbacks.
+     *
+     * Call repeatedly with microphone chunks (512 samples = 32ms at 16kHz)
+     * to detect when the user starts and stops speaking in real time.
+     *
+     * @param samples  Audio chunk (typically 512 samples per call)
+     * @param callback [VadCallback.onSpeechStart] / [VadCallback.onSpeechEnd]
+     */
+    fun processVadStream(samples: FloatArray, callback: VadCallback)
+
+    /**
+     * Reset internal LSTM state. Call between independent recording sessions.
+     */
+    fun resetVad()
+
+    /**
+     * Unload the Silero model and release VAD resources.
+     */
+    fun shutdownVad()
+
+    // ══════════════════════════════════════════════════════════════
     //                    SPEECH-TO-TEXT (STT)
     // ══════════════════════════════════════════════════════════════
 
@@ -127,7 +172,7 @@ expect object SpeechBridge {
     fun getModelPath(modelFileName: String): String
 
     /**
-     * Shutdown both STT and TTS, releasing all resources.
+     * Shutdown VAD, STT, and TTS — releasing all resources.
      */
     fun shutdown()
 }

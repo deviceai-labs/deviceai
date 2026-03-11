@@ -16,6 +16,44 @@ import platform.Foundation.*
 actual object SpeechBridge {
 
     // ══════════════════════════════════════════════════════════════
+    //              VOICE ACTIVITY DETECTION (VAD)
+    // ══════════════════════════════════════════════════════════════
+
+    actual fun initVad(modelPath: String, config: VadConfig): Boolean =
+        dai_vad_init(modelPath, config.threshold, config.sampleRate) != 0
+
+    actual fun isSpeech(samples: FloatArray): Boolean {
+        memScoped {
+            val nativeSamples = allocArray<FloatVar>(samples.size)
+            samples.forEachIndexed { i, v -> nativeSamples[i] = v }
+            return dai_vad_is_speech(nativeSamples, samples.size) != 0
+        }
+    }
+
+    actual fun processVadStream(samples: FloatArray, callback: VadCallback) {
+        memScoped {
+            val nativeSamples = allocArray<FloatVar>(samples.size)
+            samples.forEachIndexed { i, v -> nativeSamples[i] = v }
+
+            val ref = StableRef.create(callback)
+
+            val onStart = staticCFunction { user: COpaquePointer? ->
+                user!!.asStableRef<VadCallback>().get().onSpeechStart()
+            }
+            val onEnd = staticCFunction { user: COpaquePointer? ->
+                user!!.asStableRef<VadCallback>().get().onSpeechEnd()
+            }
+
+            dai_vad_process_stream(nativeSamples, samples.size, onStart, onEnd, ref.asCPointer())
+            ref.dispose()
+        }
+    }
+
+    actual fun resetVad() = dai_vad_reset()
+
+    actual fun shutdownVad() = dai_vad_shutdown()
+
+    // ══════════════════════════════════════════════════════════════
     //                    SPEECH-TO-TEXT (STT)
     // ══════════════════════════════════════════════════════════════
 
@@ -181,5 +219,5 @@ actual object SpeechBridge {
         return modelFileName
     }
 
-    actual fun shutdown() = dai_speech_shutdown_all()
+    actual fun shutdown() = dai_speech_shutdown_all()  // internally calls dai_vad_shutdown too
 }

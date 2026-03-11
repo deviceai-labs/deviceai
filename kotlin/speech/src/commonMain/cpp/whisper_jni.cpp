@@ -132,9 +132,91 @@ static void stt_on_error(const char *error, void *user_data) {
     env->DeleteLocalRef(je);
 }
 
+// ─── VAD streaming context ────────────────────────────────────────────────────
+
+struct VadStreamCtx {
+    JavaVM   *jvm;
+    jobject   callback;   // global ref
+    jmethodID onSpeechStart;
+    jmethodID onSpeechEnd;
+};
+
+static void vad_on_speech_start(void *user_data) {
+    auto *ctx = static_cast<VadStreamCtx *>(user_data);
+    JNIEnv *env;
+    ctx->jvm->AttachCurrentThread(&env, nullptr);
+    env->CallVoidMethod(ctx->callback, ctx->onSpeechStart);
+}
+
+static void vad_on_speech_end(void *user_data) {
+    auto *ctx = static_cast<VadStreamCtx *>(user_data);
+    JNIEnv *env;
+    ctx->jvm->AttachCurrentThread(&env, nullptr);
+    env->CallVoidMethod(ctx->callback, ctx->onSpeechEnd);
+}
+
 // ─── JNI exports ─────────────────────────────────────────────────────────────
 
 extern "C" {
+
+// ── VAD ──────────────────────────────────────────────────────────────────────
+
+JNIEXPORT jboolean JNICALL
+Java_dev_deviceai_SpeechBridge_nativeInitVad(
+    JNIEnv *env, jobject,
+    jstring modelPath, jfloat threshold, jint sampleRate
+) {
+    std::string path = jstring_to_std(env, modelPath);
+    return dai_vad_init(path.c_str(), (float)threshold, (int)sampleRate)
+        ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_dev_deviceai_SpeechBridge_nativeIsSpeech(
+    JNIEnv *env, jobject,
+    jfloatArray samples
+) {
+    jsize  len  = env->GetArrayLength(samples);
+    jfloat *data = env->GetFloatArrayElements(samples, nullptr);
+    int result = dai_vad_is_speech(data, (int)len);
+    env->ReleaseFloatArrayElements(samples, data, JNI_ABORT);
+    return result ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT void JNICALL
+Java_dev_deviceai_SpeechBridge_nativeProcessVadStream(
+    JNIEnv *env, jobject,
+    jfloatArray samples, jobject callback
+) {
+    jclass cbClass = env->GetObjectClass(callback);
+    VadStreamCtx ctx;
+    env->GetJavaVM(&ctx.jvm);
+    ctx.callback      = env->NewGlobalRef(callback);
+    ctx.onSpeechStart = env->GetMethodID(cbClass, "onSpeechStart", "()V");
+    ctx.onSpeechEnd   = env->GetMethodID(cbClass, "onSpeechEnd",   "()V");
+
+    jsize  len  = env->GetArrayLength(samples);
+    jfloat *data = env->GetFloatArrayElements(samples, nullptr);
+    std::vector<float> audio(data, data + len);
+    env->ReleaseFloatArrayElements(samples, data, JNI_ABORT);
+
+    dai_vad_process_stream(audio.data(), (int)audio.size(),
+        vad_on_speech_start, vad_on_speech_end, &ctx);
+
+    env->DeleteGlobalRef(ctx.callback);
+}
+
+JNIEXPORT void JNICALL
+Java_dev_deviceai_SpeechBridge_nativeResetVad(JNIEnv *, jobject) {
+    dai_vad_reset();
+}
+
+JNIEXPORT void JNICALL
+Java_dev_deviceai_SpeechBridge_nativeShutdownVad(JNIEnv *, jobject) {
+    dai_vad_shutdown();
+}
+
+// ── STT ──────────────────────────────────────────────────────────────────────
 
 JNIEXPORT jboolean JNICALL
 Java_dev_deviceai_SpeechBridge_nativeInitStt(

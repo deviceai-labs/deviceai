@@ -1,10 +1,10 @@
 /**
  * deviceai_speech_engine.h
  *
- * Unified C API for on-device speech: STT (Whisper) + TTS (Piper).
+ * Unified C API for on-device speech: VAD + STT (Whisper) + TTS (Piper).
  * Single implementation compiled once — consumed by all platform wrappers:
  *
- *   Kotlin/Android  →  JNI wrapper calls dai_stt_* / dai_tts_*
+ *   Kotlin/Android  →  JNI wrapper calls dai_vad_* / dai_stt_* / dai_tts_*
  *   Swift/iOS       →  C interop via .def file
  *   Flutter         →  dart:ffi DynamicLibrary.lookup
  *   React Native    →  JSI/FFI bridge
@@ -14,6 +14,11 @@
  *   - Callbacks carry void* user_data — safe across thread/language boundaries
  *   - Heap-allocated returns must be freed with the matching dai_speech_free_* function
  *   - STT result JSON schema: { text, language, durationMs, segments:[{text,startMs,endMs}] }
+ *
+ * VAD is decoupled from STT:
+ *   - Call dai_vad_init() independently to enable neural VAD (Silero)
+ *   - STT uses VAD internally if initialized (use_vad=1) — falls back to energy VAD otherwise
+ *   - dai_vad_is_speech() / dai_vad_process_stream() are standalone voice detection APIs
  */
 
 #ifndef DEVICEAI_SPEECH_ENGINE_H
@@ -24,6 +29,14 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+// ─── VAD callbacks ───────────────────────────────────────────────────────────
+
+/** Called when speech onset is detected in a stream. */
+typedef void (*dai_vad_speech_start_cb)(void *user_data);
+
+/** Called when end of speech is detected in a stream. */
+typedef void (*dai_vad_speech_end_cb)(void *user_data);
 
 // ─── STT callbacks ───────────────────────────────────────────────────────────
 
@@ -51,6 +64,65 @@ typedef void (*dai_tts_complete_cb)(void *user_data);
 typedef void (*dai_tts_error_cb)(const char *error, void *user_data);
 
 // ═══════════════════════════════════════════════════════════════════════════
+// MARK: - VAD (Voice Activity Detection via Silero VAD)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Load a Silero VAD ONNX model and initialize the VAD engine.
+ *
+ * VAD is optional but strongly recommended. Once initialized:
+ *   - dai_vad_is_speech() / dai_vad_process_stream() are available standalone
+ *   - STT (use_vad=1) uses Silero instead of energy-based VAD
+ *
+ * @param model_path  Absolute path to silero_vad.onnx (downloaded via ModelRegistry)
+ * @param threshold   Speech probability threshold [0.0, 1.0]. Default: 0.5
+ * @param sample_rate Input audio sample rate. Silero supports 8000 or 16000 Hz.
+ * @return 1 on success, 0 on failure
+ */
+int dai_vad_init(const char *model_path, float threshold, int sample_rate);
+
+/**
+ * Determine whether a buffer of PCM samples contains speech.
+ *
+ * Processes the buffer in 512-sample windows (32ms at 16kHz), returns 1
+ * if the average speech probability across windows exceeds the threshold.
+ *
+ * @param samples   Float32 PCM at the sample rate passed to dai_vad_init
+ * @param n_samples Number of samples
+ * @return 1 if speech detected, 0 if silence/noise
+ */
+int dai_vad_is_speech(const float *samples, int n_samples);
+
+/**
+ * Process a buffer and fire onset/offset callbacks.
+ *
+ * Useful for real-time microphone gating: call this repeatedly with
+ * 512-sample mic chunks to detect when the user starts and stops talking.
+ *
+ * on_speech_start fires on the first window that crosses the threshold.
+ * on_speech_end fires after a run of sub-threshold windows (~300ms padding).
+ *
+ * @param samples         Float32 PCM at the sample rate passed to dai_vad_init
+ * @param n_samples       Number of samples (typically 512 per mic chunk)
+ * @param on_speech_start Called when speech onset detected
+ * @param on_speech_end   Called when speech offset detected
+ * @param user_data       Passed to both callbacks
+ */
+void dai_vad_process_stream(
+    const float            *samples,
+    int                     n_samples,
+    dai_vad_speech_start_cb on_speech_start,
+    dai_vad_speech_end_cb   on_speech_end,
+    void                   *user_data
+);
+
+/** Reset internal LSTM state. Call between independent audio streams. */
+void dai_vad_reset(void);
+
+/** Unload the Silero model and release VAD resources. */
+void dai_vad_shutdown(void);
+
+// ═══════════════════════════════════════════════════════════════════════════
 // MARK: - STT (Speech-to-Text via whisper.cpp)
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -62,7 +134,8 @@ typedef void (*dai_tts_error_cb)(const char *error, void *user_data);
  * @param translate      1 = translate to English; 0 = transcribe in source language
  * @param max_threads    CPU threads for inference
  * @param use_gpu        1 = use GPU (Metal on iOS, OpenCL on Android); 0 = CPU only
- * @param use_vad        1 = enable energy-based VAD with adaptive threshold (recommended)
+ * @param use_vad        1 = apply VAD before transcription. Uses Silero if dai_vad_init() was
+ *                           called, otherwise falls back to energy-based VAD.
  * @param single_segment 1 = force single output segment (faster for short utterances)
  * @param no_context     1 = disable cross-segment context (reduces hallucinations)
  * @return 1 on success, 0 on failure
