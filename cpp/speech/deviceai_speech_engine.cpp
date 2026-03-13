@@ -525,7 +525,14 @@ int dai_stt_init(
         return 0;
     }
 
-    g_stt_params = whisper_full_default_params(WHISPER_SAMPLING_GREEDY);
+    // Beam search (beam_size=5) instead of greedy: maintains 5 candidate
+    // sequences simultaneously. Paths that enter repetition loops score
+    // poorly against novel continuations and get pruned early, solving the
+    // phrase-repetition problem ("I ate an ice cream today" × 15) that the
+    // word-rate guard cannot catch because the WPS is within normal range.
+    // Encoder is the bottleneck on mobile so beam decode overhead is <2×.
+    g_stt_params = whisper_full_default_params(WHISPER_SAMPLING_BEAM_SEARCH);
+    g_stt_params.beam_search.beam_size = 5;
     g_stt_params.language         = g_stt_language.c_str();
     g_stt_params.translate        = (translate != 0);
     g_stt_params.n_threads        = max_threads;
@@ -536,15 +543,13 @@ int dai_stt_init(
     g_stt_params.print_progress   = false;
     g_stt_params.print_realtime   = false;
     g_stt_params.print_timestamps = false;
-    // Suppress non-speech tokens (music notes, laughter, etc.) to prevent
-    // whisper-tiny from looping on them when audio is short or ambiguous.
+    // Suppress non-speech tokens (music notes, laughter, etc.)
     g_stt_params.suppress_nst     = true;
-    // Temperature fallback: if greedy gets stuck in a repetition loop
-    // (low entropy), increment temperature and retry.
+    // Temperature fallback: if beam search still gets stuck (entropy too low
+    // or logprob too low after all beams), increment temperature and retry.
     g_stt_params.temperature_inc  = 0.2f;
     g_stt_params.entropy_thold    = 2.4f;
     // Reject segments where average token log-probability is too low.
-    // Default -1.0f is very permissive; -0.6f filters near-silence garbage.
     g_stt_params.logprob_thold    = -0.6f;
 
     STT_LOGI("Initialized: %s (lang=%s vad=%d gpu=%d threads=%d)",
