@@ -6,7 +6,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.core.app.ActivityCompat
-import dev.deviceai.core.DeviceAIRuntime
+import dev.deviceai.core.DeviceAI
 import dev.deviceai.core.Environment
 import dev.deviceai.models.PlatformStorage
 
@@ -15,9 +15,10 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Configure SDK environment before anything else.
-        // Switch to Environment.PRODUCTION for release builds.
-        DeviceAIRuntime.configure(Environment.DEVELOPMENT)
+        // Initialize DeviceAI SDK. Switch to Environment.Production + apiKey for release builds.
+        DeviceAI.initialize(context = this) {
+            environment = Environment.Development
+        }
 
         // Must run before ModelRegistry.initialize() which is triggered lazily
         // inside SpeechViewModel.initialize() from HomeScreen's LaunchedEffect.

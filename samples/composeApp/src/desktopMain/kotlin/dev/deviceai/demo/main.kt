@@ -9,7 +9,7 @@ import dev.deviceai.core.Environment
 
 fun main() = application {
     // Configure SDK environment at startup. Switch to PRODUCTION for release builds.
-    DeviceAIRuntime.configure(Environment.DEVELOPMENT)
+    DeviceAIRuntime.configure(Environment.Development)
     Window(
         onCloseRequest = ::exitApplication,
         title = "DeviceAI",

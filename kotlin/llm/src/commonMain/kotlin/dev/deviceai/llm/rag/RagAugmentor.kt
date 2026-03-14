@@ -7,7 +7,7 @@ import dev.deviceai.llm.LlmRole
 /**
  * Injects retrieved RAG context into the message list before it reaches the LLM engine.
  *
- * Called by each LlmBridge actual inside [generate] and [generateStream].
+ * Called by each LlmCppBridge actual inside [generate] and [generateStream].
  * Returns the original list unchanged when [LlmGenConfig.ragStore] is null.
  */
 internal object RagAugmentor {

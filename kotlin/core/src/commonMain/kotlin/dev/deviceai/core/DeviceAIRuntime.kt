@@ -6,16 +6,24 @@ package dev.deviceai.core
  */
 enum class Environment {
     /**
-     * Development / debug builds.
-     * Emits DEBUG, INFO, WARN, and ERROR — full verbosity.
+     * Local development / debug builds.
+     * No API key required. All cloud calls are skipped — models are loaded from
+     * an explicit local path. Full log verbosity (DEBUG and above).
      */
-    DEVELOPMENT,
+    Development,
 
     /**
-     * Production / release builds.
-     * Emits WARN and ERROR only — no noise in production console logs.
+     * Staging environment. Points to staging.api.deviceai.dev.
+     * Requires an API key. Use for pre-release integration testing.
+     * Full log verbosity (DEBUG and above).
      */
-    PRODUCTION
+    Staging,
+
+    /**
+     * Production / release builds. Points to api.deviceai.dev.
+     * Requires an API key. WARN and ERROR logs only — no noise in the console.
+     */
+    Production
 }
 
 /**
@@ -28,7 +36,7 @@ enum class Environment {
  * class MyApplication : Application() {
  *     override fun onCreate() {
  *         super.onCreate()
- *         DeviceAIRuntime.configure(Environment.DEVELOPMENT)   // or PRODUCTION
+ *         DeviceAIRuntime.configure(Environment.Development)   // or PRODUCTION
  *         PlatformStorage.initialize(this)
  *     }
  * }
@@ -37,7 +45,7 @@ enum class Environment {
  * ### iOS
  * ```kotlin
  * fun MainViewController(): UIViewController {
- *     DeviceAIRuntime.configure(Environment.DEVELOPMENT)
+ *     DeviceAIRuntime.configure(Environment.Development)
  *     return ComposeUIViewController { App() }
  * }
  * ```
@@ -45,7 +53,7 @@ enum class Environment {
  * ### Desktop
  * ```kotlin
  * fun main() = application {
- *     DeviceAIRuntime.configure(Environment.DEVELOPMENT)
+ *     DeviceAIRuntime.configure(Environment.Development)
  *     Window(...) { App() }
  * }
  * ```
@@ -53,7 +61,7 @@ enum class Environment {
 object DeviceAIRuntime {
 
     /** The environment this SDK instance was configured with. */
-    var environment: Environment = Environment.PRODUCTION
+    var environment: Environment = Environment.Production
         private set
 
     private var configured = false
@@ -63,8 +71,8 @@ object DeviceAIRuntime {
      * using any DeviceAI module. Calling it a second time throws [IllegalStateException].
      *
      * @param environment Drives default log verbosity:
-     *   - [Environment.DEVELOPMENT] → DEBUG and above (everything)
-     *   - [Environment.PRODUCTION]  → WARN and above (warnings + errors only)
+     *   - [Environment.Development] → DEBUG and above (everything)
+     *   - [Environment.Production]  → WARN and above (warnings + errors only)
      * @param logHandler Optional custom log sink. Replaces the default platform
      *   logger (Logcat / NSLog / println). Pass `null` to keep platform default.
      *   Useful for routing SDK logs to Crashlytics, Datadog, Sentry, etc.
@@ -83,6 +91,9 @@ object DeviceAIRuntime {
         CoreSDKLogger.debug("DeviceAIRuntime", "SDK initialised — env=$environment")
     }
 
-    /** `true` when running in [Environment.DEVELOPMENT]. */
-    val isDevelopment: Boolean get() = environment == Environment.DEVELOPMENT
+    /** `true` when running in [Environment.Development] (no backend, local models). */
+    val isDevelopment: Boolean get() = environment == Environment.Development
+
+    /** `true` when running in [Environment.Staging] or [Environment.Production]. */
+    val isCloud: Boolean get() = environment == Environment.Staging || environment == Environment.Production
 }

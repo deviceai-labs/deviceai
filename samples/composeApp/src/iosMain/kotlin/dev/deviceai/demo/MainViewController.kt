@@ -7,7 +7,7 @@ import platform.UIKit.UIViewController
 
 // Initialised once per process — guards against SwiftUI recreating the
 // UIViewControllerRepresentable (e.g. scene lifecycle / dark-mode transitions).
-private val runtimeInit by lazy { DeviceAIRuntime.configure(Environment.DEVELOPMENT) }
+private val runtimeInit by lazy { DeviceAIRuntime.configure(Environment.Development) }
 
 fun MainViewController(): UIViewController {
     runtimeInit // ensure configure() runs exactly once

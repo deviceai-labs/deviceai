@@ -65,8 +65,9 @@ object CoreSDKLogger {
      */
     internal fun configure(environment: Environment, handler: ((LogEvent) -> Unit)?) {
         minLevel = when (environment) {
-            Environment.DEVELOPMENT -> LogLevel.DEBUG
-            Environment.PRODUCTION  -> LogLevel.WARN
+            Environment.Development -> LogLevel.DEBUG
+            Environment.Staging     -> LogLevel.DEBUG
+            Environment.Production  -> LogLevel.WARN
         }
         customHandler = handler
     }

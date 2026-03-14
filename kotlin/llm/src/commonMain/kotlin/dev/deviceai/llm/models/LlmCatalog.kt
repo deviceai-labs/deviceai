@@ -10,7 +10,7 @@ package dev.deviceai.llm.models
  * ```kotlin
  * val model = LlmCatalog.LLAMA_3_2_1B_INSTRUCT_Q4
  * // download via LlmRegistry, then:
- * LlmBridge.initLlm(localModel.modelPath)
+ * LlmCppBridge.initLlm(localModel.modelPath)
  * ```
  */
 object LlmCatalog {

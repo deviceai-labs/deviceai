@@ -5,7 +5,7 @@ import dev.deviceai.llm.rag.RagAugmentor
 import kotlinx.coroutines.flow.Flow
 
 @Suppress("EXPECT_ACTUAL_CLASSIFIERS_ARE_IN_BETA_WARNING")
-actual object LlmBridge {
+actual object LlmCppBridge {
     actual fun initLlm(modelPath: String, config: LlmInitConfig) = LlmJniEngine.init(modelPath, config)
     actual fun shutdown() = LlmJniEngine.shutdown()
     actual fun generate(messages: List<LlmMessage>, config: LlmGenConfig) =

@@ -10,9 +10,15 @@ import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.flowOn
 import kotlin.time.measureTime
 
+/**
+ * iOS actual implementation of [LlmCppBridge].
+ *
+ * Calls the unified dai_llm_* C API in deviceai_llm_engine directly
+ * via cinterop — no intermediate C++ wrapper file.
+ */
 @Suppress("EXPECT_ACTUAL_CLASSIFIERS_ARE_IN_BETA_WARNING")
 @OptIn(ExperimentalForeignApi::class)
-actual object LlmBridge {
+actual object LlmCppBridge {
 
     actual fun initLlm(modelPath: String, config: LlmInitConfig): Boolean =
         llm_init(modelPath, config.contextSize, config.maxThreads, config.useGpu)
