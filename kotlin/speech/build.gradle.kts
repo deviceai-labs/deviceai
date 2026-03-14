@@ -10,7 +10,7 @@ plugins {
 }
 
 group = "dev.deviceai"
-version = (System.getenv("RELEASE_VERSION") ?: "0.2.0-alpha01")
+version = (System.getenv("RELEASE_VERSION") ?: "0.2.0-alpha02")
 
 // Minimum iOS version
 val minIos = "16.0"
