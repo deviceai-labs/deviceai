@@ -18,8 +18,8 @@ set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 #                        PATHS
 # ═══════════════════════════════════════════════════════════════
 
-set(WHISPER_DIR    "${CMAKE_SOURCE_DIR}/../../../third_party/whisper.cpp")
-set(SHERPA_DIR     "${CMAKE_SOURCE_DIR}/../../../third_party/sherpa-onnx")
+set(WHISPER_DIR    "${CMAKE_SOURCE_DIR}/../../../../third_party/whisper.cpp")
+set(SHERPA_DIR     "${CMAKE_SOURCE_DIR}/../../../../third_party/sherpa-onnx")
 set(IOS_CPP_DIR    "${PROJECT_SOURCE_DIR}/../../src/iosMain/cpp")
 set(IOS_INCLUDE_DIR "${PROJECT_SOURCE_DIR}/../../src/iosMain/c_interop/include")
 
@@ -46,21 +46,11 @@ endif()
 #                    TTS (SHERPA-ONNX)
 # ═══════════════════════════════════════════════════════════════
 
-if(EXISTS ${SHERPA_DIR}/CMakeLists.txt)
-    set(SHERPA_ONNX_ENABLE_PYTHON       OFF CACHE BOOL "" FORCE)
-    set(SHERPA_ONNX_ENABLE_TESTS        OFF CACHE BOOL "" FORCE)
-    set(SHERPA_ONNX_ENABLE_CHECK        OFF CACHE BOOL "" FORCE)
-    set(SHERPA_ONNX_ENABLE_PORTAUDIO    OFF CACHE BOOL "" FORCE)
-    set(SHERPA_ONNX_ENABLE_JNI          OFF CACHE BOOL "" FORCE)
-    set(SHERPA_ONNX_ENABLE_C_API        ON  CACHE BOOL "" FORCE)
-
-    add_subdirectory(${SHERPA_DIR} sherpa-build EXCLUDE_FROM_ALL)
-    set(SHERPA_FOUND TRUE)
-    message(STATUS "sherpa-onnx found — TTS enabled")
-else()
-    message(STATUS "sherpa-onnx not found at ${SHERPA_DIR} — TTS will use no-op stubs")
-    set(SHERPA_FOUND FALSE)
-endif()
+# sherpa-onnx source build is not supported for iOS (its CMake only handles
+# Linux/macOS/Windows for onnxruntime download).  TTS uses no-op stubs on iOS
+# until a pre-built XCFramework is available.
+set(SHERPA_FOUND FALSE)
+message(STATUS "sherpa-onnx skipped on iOS — TTS will use no-op stubs")
 
 # ═══════════════════════════════════════════════════════════════
 #                    iOS WRAPPER LIBRARY

@@ -89,8 +89,60 @@ data class PiperVoiceInfo(
     val configUrl: String
 ) : ModelInfo
 
+/**
+ * sherpa-onnx TTS voice model (VITS or Kokoro).
+ *
+ * Kokoro models need only [modelUrl] + [tokensUrl] + [voicesUrl] (no espeak-ng-data).
+ * VITS models that use espeak phonemization also need [dataDirZipUrl] for the espeak-ng-data directory.
+ */
+data class TtsVoiceInfo(
+    override val id: String,
+    override val displayName: String,
+    override val sizeBytes: Long,
+    /** ISO 639-1 language code, e.g. "en", "zh". */
+    val languageCode: String,
+    val modelType: TtsModelType,
+    /** Direct URL to the ONNX model file. */
+    val modelUrl: String,
+    /** Direct URL to tokens.txt. */
+    val tokensUrl: String,
+    /** URL to voices.bin — required for Kokoro, null for VITS. */
+    val voicesUrl: String? = null,
+    /** Number of speaker IDs supported by this voice model. */
+    val numSpeakers: Int = 1
+) : ModelInfo
+
+/**
+ * Distinguishes sherpa-onnx TTS model architectures.
+ * - [KOKORO]: needs model.onnx + tokens.txt + voices.bin; no espeak-ng-data required.
+ * - [VITS]: needs model.onnx + tokens.txt; may also need espeak-ng-data for English phonemization.
+ */
+enum class TtsModelType { VITS, KOKORO }
+
+/**
+ * Returns the absolute path to voices.bin for a downloaded Kokoro TTS model,
+ * or an empty string if this is a VITS model that does not need voices.bin.
+ *
+ * Usage:
+ * ```kotlin
+ * val local = ModelRegistry.download(voice).getOrThrow()
+ * SpeechBridge.initTts(
+ *     modelPath  = local.modelPath,
+ *     tokensPath = local.configPath!!,
+ *     config     = TtsConfig(voicesPath = local.ttsVoicesPath())
+ * )
+ * ```
+ */
+fun LocalModel.ttsVoicesPath(): String {
+    if (modelType != LocalModelType.TTS) return ""
+    val dir = modelPath.substringBeforeLast('/')
+    val candidate = "$dir/voices.bin"
+    return candidate
+}
+
 // LocalModelType constants for runtime-speech model types.
 // Defined here as companion extensions so runtime-core never needs to be modified
 // when new modules are added — Open/Closed Principle.
 val LocalModelType.Companion.WHISPER get() = LocalModelType("WHISPER")
 val LocalModelType.Companion.PIPER   get() = LocalModelType("PIPER")
+val LocalModelType.Companion.TTS     get() = LocalModelType("TTS")

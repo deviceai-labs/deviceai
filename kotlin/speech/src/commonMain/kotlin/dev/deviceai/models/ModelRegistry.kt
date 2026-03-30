@@ -41,6 +41,7 @@ object ModelRegistry {
     private lateinit var piperCatalog: PiperCatalog
     private lateinit var downloader: ModelDownloader
     private lateinit var store: MetadataStore
+    // TtsCatalog is a singleton object — no instance variable needed.
 
     /**
      * Initialize the registry with optional configuration.
@@ -67,7 +68,8 @@ object ModelRegistry {
         this.downloader = ModelDownloader(
             listOf(
                 WhisperDownloadStrategy(http, fs, paths, store),
-                PiperDownloadStrategy(http, fs, paths, store)
+                PiperDownloadStrategy(http, fs, paths, store),
+                TtsDownloadStrategy(http, fs, paths, store)
             )
         )
         initialized = true
@@ -104,6 +106,17 @@ object ModelRegistry {
     ): List<PiperVoiceInfo> {
         requireInitialized()
         return piperCatalog.fetchVoices(language, quality)
+    }
+
+    /**
+     * Return available sherpa-onnx TTS voices from the built-in catalog (no network required).
+     *
+     * @param languageCode ISO 639-1 code to filter by (e.g. "en", "zh"). Null returns all.
+     */
+    fun getTtsVoices(languageCode: String? = null): List<TtsVoiceInfo> {
+        requireInitialized()
+        return if (languageCode != null) TtsCatalog.getVoices(languageCode)
+               else TtsCatalog.getVoices()
     }
 
     // ══════════════════════════════════════════════════════════════
@@ -235,8 +248,10 @@ object ModelRegistry {
         PlatformStorage.deleteFile(model.modelPath)
         model.configPath?.let { PlatformStorage.deleteFile(it) }
 
-        if (model.modelType == LocalModelType.PIPER) {
+        if (model.modelType == LocalModelType.PIPER || model.modelType == LocalModelType.TTS) {
             val voiceDir = model.modelPath.substringBeforeLast('/')
+            // Delete voices.bin if present (Kokoro TTS)
+            PlatformStorage.deleteFile("$voiceDir/voices.bin")
             PlatformStorage.deleteFile(voiceDir)
         }
 
