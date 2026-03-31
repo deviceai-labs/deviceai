@@ -270,44 +270,61 @@ Java_dev_deviceai_SpeechBridge_nativeSynthesizeStream(
     }
     env->DeleteLocalRef(cbClass);
 
+    // Prepare input before entering the critical section.
+    std::string input = jstring_to_string(env, text);
+
     // ── Lock: validate state, generate, copy samples, then release ──────────
+    // Never invoke Java callbacks while g_mutex is held — a callback that calls
+    // back into native (e.g., nativeShutdownTts) would try to reacquire the
+    // same mutex and deadlock.
     std::vector<jshort> shorts;
+    bool tts_initialized = false;
+    bool cancelled_or_empty = false;
+    bool was_cancelled = false;
     {
         std::lock_guard<std::mutex> lock(g_mutex);
 
         if (!g_tts) {
-            jstring msg = env->NewStringUTF("TTS not initialized");
-            if (msg) { env->CallVoidMethod(callback, onError, msg); env->DeleteLocalRef(msg); }
-            return;
-        }
+            // tts_initialized stays false; error reported after lock is released
+        } else {
+            tts_initialized = true;
+            g_cancel_requested = false;
 
-        g_cancel_requested = false;
+            const SherpaOnnxGeneratedAudio *audio =
+                SherpaOnnxOfflineTtsGenerate(g_tts, input.c_str(), g_speaker_id, 1.0f);
 
-        std::string input = jstring_to_string(env, text);
-
-        const SherpaOnnxGeneratedAudio *audio =
-            SherpaOnnxOfflineTtsGenerate(g_tts, input.c_str(), g_speaker_id, 1.0f);
-
-        if (!audio || audio->n == 0 || g_cancel_requested) {
-            if (!g_cancel_requested) {
-                jstring msg = env->NewStringUTF("No audio generated");
-                if (msg) { env->CallVoidMethod(callback, onError, msg); env->DeleteLocalRef(msg); }
+            was_cancelled = g_cancel_requested.load();
+            if (!audio || audio->n == 0 || was_cancelled) {
+                cancelled_or_empty = true;
+                if (audio) SherpaOnnxDestroyOfflineTtsGeneratedAudio(audio);
+            } else {
+                // Convert float → int16 while still under lock, before any Java call
+                shorts.resize(audio->n);
+                for (int i = 0; i < audio->n; ++i) {
+                    float v = audio->samples[i];
+                    if (v >  1.0f) v =  1.0f;
+                    if (v < -1.0f) v = -1.0f;
+                    shorts[i] = static_cast<jshort>(v * 32767.0f);
+                }
+                SherpaOnnxDestroyOfflineTtsGeneratedAudio(audio);
             }
-            if (audio) SherpaOnnxDestroyOfflineTtsGeneratedAudio(audio);
-            return;
         }
-
-        // Convert float → int16 while still under lock, before any Java call
-        shorts.resize(audio->n);
-        for (int i = 0; i < audio->n; ++i) {
-            float v = audio->samples[i];
-            if (v >  1.0f) v =  1.0f;
-            if (v < -1.0f) v = -1.0f;
-            shorts[i] = static_cast<jshort>(v * 32767.0f);
-        }
-        SherpaOnnxDestroyOfflineTtsGeneratedAudio(audio);
     }
     // ── Lock released — safe to call into Java ───────────────────────────────
+
+    if (!tts_initialized) {
+        jstring msg = env->NewStringUTF("TTS not initialized");
+        if (msg) { env->CallVoidMethod(callback, onError, msg); env->DeleteLocalRef(msg); }
+        return;
+    }
+
+    if (cancelled_or_empty) {
+        if (!was_cancelled) {
+            jstring msg = env->NewStringUTF("No audio generated");
+            if (msg) { env->CallVoidMethod(callback, onError, msg); env->DeleteLocalRef(msg); }
+        }
+        return;
+    }
 
     // Send audio in chunks (4096 samples ≈ 170ms at 24kHz)
     const int CHUNK_SIZE = 4096;
