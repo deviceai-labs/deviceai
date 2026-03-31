@@ -135,9 +135,11 @@ enum class TtsModelType { VITS, KOKORO }
  */
 fun LocalModel.ttsVoicesPath(): String {
     if (modelType != LocalModelType.TTS) return ""
-    val dir = modelPath.substringBeforeLast('/')
-    val candidate = "$dir/voices.bin"
-    return candidate
+    val candidate = "${modelPath.substringBeforeLast('/')}/voices.bin"
+    // Only return a path if voices.bin was actually downloaded (Kokoro models).
+    // VITS models never download voices.bin; returning a non-empty path would
+    // make the native layer treat them as Kokoro and fail at init.
+    return if (PlatformStorage.fileExists(candidate)) candidate else ""
 }
 
 // LocalModelType constants for runtime-speech model types.
