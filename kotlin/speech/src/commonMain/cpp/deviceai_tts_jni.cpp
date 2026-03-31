@@ -273,7 +273,8 @@ Java_dev_deviceai_SpeechBridge_nativeSynthesizeStream(
     std::lock_guard<std::mutex> lock(g_mutex);
 
     if (!g_tts) {
-        env->CallVoidMethod(callback, onError, env->NewStringUTF("TTS not initialized"));
+        jstring msg = env->NewStringUTF("TTS not initialized");
+        if (msg) { env->CallVoidMethod(callback, onError, msg); env->DeleteLocalRef(msg); }
         return;
     }
 
@@ -286,8 +287,8 @@ Java_dev_deviceai_SpeechBridge_nativeSynthesizeStream(
 
     if (!audio || audio->n == 0 || g_cancel_requested) {
         if (!g_cancel_requested) {
-            env->CallVoidMethod(callback, onError,
-                                env->NewStringUTF("No audio generated"));
+            jstring msg = env->NewStringUTF("No audio generated");
+            if (msg) { env->CallVoidMethod(callback, onError, msg); env->DeleteLocalRef(msg); }
         }
         if (audio) SherpaOnnxDestroyOfflineTtsGeneratedAudio(audio);
         return;
