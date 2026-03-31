@@ -107,7 +107,6 @@ bool speech_tts_init(const char *model_path, const char *tokens_path,
         config.model.kokoro.tokens       = tokens_path;
         config.model.kokoro.data_dir     = data_dir;
         config.model.kokoro.length_scale = (speech_rate > 0.0f) ? 1.0f / speech_rate : 1.0f;
-        config.model.kokoro.noise_scale  = 0.667f;
     } else {
         config.model.vits.model          = model_path;
         config.model.vits.tokens         = tokens_path;

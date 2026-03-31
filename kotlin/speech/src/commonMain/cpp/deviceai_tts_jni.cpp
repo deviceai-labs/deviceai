@@ -11,6 +11,7 @@
 #include "deviceai_speech_jni.h"
 
 #include <string>
+#include <vector>
 #include <atomic>
 #include <mutex>
 #include <fstream>
@@ -141,7 +142,6 @@ Java_dev_deviceai_SpeechBridge_nativeInitTts(
         config.model.kokoro.tokens     = tokens.c_str();
         config.model.kokoro.data_dir   = data.c_str();
         config.model.kokoro.length_scale = (speechRate > 0.0f) ? 1.0f / speechRate : 1.0f;
-        config.model.kokoro.noise_scale  = 0.667f;
     } else {
         config.model.vits.model      = model.c_str();
         config.model.vits.tokens     = tokens.c_str();
