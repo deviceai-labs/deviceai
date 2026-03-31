@@ -49,6 +49,7 @@ static std::atomic<bool>           g_cancel_requested{false};
 static std::string jstring_to_string(JNIEnv *env, jstring jstr) {
     if (jstr == nullptr) return "";
     const char *chars = env->GetStringUTFChars(jstr, nullptr);
+    if (chars == nullptr) return "";  // OOM — GetStringUTFChars set a pending exception
     std::string result(chars);
     env->ReleaseStringUTFChars(jstr, chars);
     return result;
@@ -341,6 +342,7 @@ Java_dev_deviceai_SpeechBridge_nativeShutdownTts(
 static std::string jstring_to_string(JNIEnv *env, jstring jstr) {
     if (jstr == nullptr) return "";
     const char *chars = env->GetStringUTFChars(jstr, nullptr);
+    if (chars == nullptr) return "";  // OOM — GetStringUTFChars set a pending exception
     std::string result(chars);
     env->ReleaseStringUTFChars(jstr, chars);
     return result;
