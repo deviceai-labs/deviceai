@@ -1,11 +1,19 @@
 package dev.deviceai.core
 
+import dev.deviceai.core.backend.BackendClient
+import dev.deviceai.core.backend.DeviceSession
+import dev.deviceai.core.backend.SessionStore
+import dev.deviceai.core.telemetry.TelemetryEngine
+import dev.deviceai.core.telemetry.TelemetryEvent
+import dev.deviceai.core.telemetry.TelemetryLevel
+import kotlinx.coroutines.*
+
 /**
  * Primary entry point for the DeviceAI SDK.
  *
  * Call [initialize] **once** at app startup, then use [llm] and [speech] to run inference.
  *
- * ## Minimal (Development — no backend required)
+ * ## Local mode (no API key / Development)
  * ```kotlin
  * // Android Application.onCreate()
  * DeviceAI.initialize(context)
@@ -15,17 +23,17 @@ package dev.deviceai.core
  * session.send("Hello").collect { token -> print(token) }
  * ```
  *
- * ## With cloud (Staging / Production)
+ * ## Managed mode (API key required)
  * ```kotlin
  * DeviceAI.initialize(context, apiKey = "dai_live_...") {
  *     environment = Environment.Production
- *     telemetry   = Telemetry.Enabled
+ *     telemetry   = TelemetryLevel.Minimal
  *     wifiOnly    = true
  *     appVersion  = BuildConfig.VERSION_NAME
- *     appAttributes = mapOf("user_tier" to "premium")
+ *     capabilityProfile = mapOf("ram_gb" to 8.0, "cpu_cores" to 8, "has_npu" to true)
  * }
  *
- * // Model path comes from the manifest — no explicit path needed.
+ * // Model is resolved from the manifest — path provided automatically.
  * val session = DeviceAI.llm.chat()
  * ```
  *
@@ -33,13 +41,26 @@ package dev.deviceai.core
  * | Environment | API key | Backend | Use for |
  * |---|---|---|---|
  * | [Environment.Development] | not required | none (local) | local dev + unit tests |
- * | [Environment.Staging] | required | staging.api.deviceai.dev | pre-release QA |
- * | [Environment.Production] | required | api.deviceai.dev | release builds |
+ * | [Environment.Staging]     | required | staging.api.deviceai.dev | pre-release QA |
+ * | [Environment.Production]  | required | api.deviceai.dev | release builds |
  */
 object DeviceAI {
 
     internal var cloudConfig: CloudConfig? = null
         private set
+
+    // Internal components — null until initialize() runs in managed mode.
+    internal var backendClient: BackendClient? = null
+        private set
+    internal var telemetryEngine: TelemetryEngine? = null
+        private set
+    internal var deviceSession: DeviceSession? = null
+        private set
+
+    private val sdkScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    // Stable session ID for the lifetime of this process (not persisted).
+    internal val processSessionId: String = generateSessionId()
 
     // ── Initialization ────────────────────────────────────────────────────────
 
@@ -47,74 +68,204 @@ object DeviceAI {
      * Initialize the DeviceAI SDK.
      *
      * **Must be called exactly once** at app startup before using any module.
-     * In [Environment.Development] no [apiKey] is required — all cloud calls are
-     * skipped and models are loaded from explicit local paths.
+     *
+     * ### Local mode (no API key)
+     * When [apiKey] is `null` or [Environment.Development] is set, all cloud calls
+     * are skipped. Models are loaded from explicit local paths passed to each module.
+     *
+     * ### Managed mode (API key present)
+     * The SDK asynchronously:
+     * 1. Registers or restores a device session (cached across launches)
+     * 2. Fetches the model manifest for this device's cohort
+     * 3. Starts periodic manifest refresh every [CloudConfig.manifestSyncInterval]
+     * 4. Flushes buffered telemetry when threshold is reached
      *
      * @param context Android [android.content.Context]. Pass `null` on iOS/JVM.
-     * @param apiKey  Your `dai_live_*` key from cloud.deviceai.dev.
+     * @param apiKey  `dai_live_*` key from cloud.deviceai.dev.
      *   Not required in [Environment.Development].
-     * @param block   Optional DSL block to configure cloud behaviour, telemetry,
-     *   and app metadata. See [CloudConfig.Builder].
+     * @param block   Optional DSL block — see [CloudConfig.Builder].
      */
     fun initialize(
         context: Any? = null,
         apiKey: String? = null,
         block: CloudConfig.Builder.() -> Unit = {},
     ) {
-        val builder = CloudConfig.Builder(apiKey).apply(block)
-        val config = builder.build()
+        val config = CloudConfig.Builder(apiKey).apply(block).build()
 
-        // Configure runtime first — throws IllegalStateException on double-init.
-        // Only update cloudConfig after configure() succeeds so state stays consistent.
         DeviceAIRuntime.configure(config.environment)
         cloudConfig = config
 
         CoreSDKLogger.info("DeviceAI", buildString {
-            append("Initialized — env=${config.environment}")
+            append("initialized — env=${config.environment}")
             if (config.environment != Environment.Development) {
                 append(", baseUrl=${config.baseUrl}")
                 append(", telemetry=${config.telemetry}")
             }
         })
 
-        if (config.environment == Environment.Development) {
-            CoreSDKLogger.debug("DeviceAI",
-                "Development mode — cloud calls disabled. " +
-                "Provide model path explicitly: DeviceAI.llm.chat(modelPath)"
-            )
+        if (config.environment == Environment.Development || apiKey == null) {
+            if (config.environment != Environment.Development && apiKey == null) {
+                CoreSDKLogger.warn(
+                    "DeviceAI",
+                    "apiKey is required for Environment.${config.environment}. " +
+                    "Running in local mode — cloud features disabled. " +
+                    "Get your dai_live_* key from cloud.deviceai.dev."
+                )
+            } else {
+                CoreSDKLogger.debug(
+                    "DeviceAI",
+                    "Local mode — cloud calls disabled. " +
+                    "Provide model path explicitly: DeviceAI.llm.chat(modelPath)"
+                )
+            }
             return
         }
 
-        if (apiKey == null) {
-            CoreSDKLogger.warn("DeviceAI",
-                "apiKey is required for Environment.${config.environment}. " +
-                "Cloud features are disabled. Get your dai_live_* key from cloud.deviceai.dev."
+        // ── Managed mode ──────────────────────────────────────────────────────
+        val client = BackendClient(config.baseUrl, apiKey)
+        backendClient = client
+
+        // Wire up telemetry engine if enabled.
+        if (config.telemetry != TelemetryLevel.Off) {
+            telemetryEngine = TelemetryEngine(
+                level = config.telemetry,
+                flushFn = { events ->
+                    val session = deviceSession ?: return@TelemetryEngine
+                    client.ingestTelemetry(session.token, processSessionId, events)
+                }
             )
-            return
         }
 
-        // TODO: Phase 2 — start async device registration + manifest sync
-        // DeviceRegistration.registerAsync(context, config)
-        CoreSDKLogger.debug("DeviceAI",
-            "Cloud integration pending Phase 2 — backend not yet connected."
-        )
+        // Kick off async device session + manifest bootstrap.
+        sdkScope.launch {
+            bootstrapManagedMode(config, client)
+        }
     }
 
-    // ── Module namespaces ─────────────────────────────────────────────────────
-    //
-    // LLM:    DeviceAI.llm    — added by kotlin/llm via extension property
-    // Speech: DeviceAI.speech — added by kotlin/speech via extension property (Phase 2)
+    // ── Internal managed-mode bootstrap ──────────────────────────────────────
+
+    private suspend fun bootstrapManagedMode(config: CloudConfig, client: BackendClient) {
+        // 1. Restore or register device session.
+        val session = resolveSession(config, client) ?: run {
+            CoreSDKLogger.warn("DeviceAI", "device registration failed — cloud features unavailable")
+            return
+        }
+        deviceSession = session
+
+        CoreSDKLogger.info("DeviceAI",
+            "device registered — id=${session.deviceId}, tier=${session.capabilityTier}")
+
+        // 2. Fetch initial manifest.
+        fetchAndLogManifest(client, session)
+
+        // 3. Schedule periodic manifest refresh.
+        while (sdkScope.isActive) {
+            delay(config.manifestSyncInterval)
+            val current = deviceSession ?: break
+            val active = refreshSessionIfNeeded(client, current)
+            deviceSession = active
+            fetchAndLogManifest(client, active)
+        }
+    }
+
+    private suspend fun resolveSession(config: CloudConfig, client: BackendClient): DeviceSession? {
+        // Try cached session first.
+        val cached = SessionStore.load()
+        if (cached != null && !cached.isExpired) {
+            val active = refreshSessionIfNeeded(client, cached)
+            SessionStore.save(active)
+            return active
+        }
+
+        // Register fresh.
+        return try {
+            val session = client.registerDevice(config.capabilityProfile)
+            SessionStore.save(session)
+            session
+        } catch (e: Exception) {
+            CoreSDKLogger.warn("DeviceAI", "registerDevice failed: ${e.message}")
+            null
+        }
+    }
+
+    private suspend fun refreshSessionIfNeeded(
+        client: BackendClient,
+        session: DeviceSession,
+    ): DeviceSession {
+        if (!session.needsRefresh) return session
+        val refreshed = client.refreshToken(session)
+        if (refreshed != null) {
+            SessionStore.save(refreshed)
+            CoreSDKLogger.debug("DeviceAI", "device token refreshed")
+            return refreshed
+        }
+        return session
+    }
+
+    private suspend fun fetchAndLogManifest(client: BackendClient, session: DeviceSession) {
+        try {
+            val manifest = client.fetchManifest(session.token)
+            CoreSDKLogger.info("DeviceAI",
+                "manifest synced — ${manifest.models.size} model(s) assigned, tier=${manifest.tier}")
+            telemetryEngine?.record(TelemetryEvent.ManifestSync(
+                timestampMs = dev.deviceai.models.currentTimeMillis(),
+                success = true,
+                modelCount = manifest.models.size,
+            ))
+        } catch (e: Exception) {
+            CoreSDKLogger.warn("DeviceAI", "manifest fetch failed: ${e.message}")
+            telemetryEngine?.record(TelemetryEvent.ManifestSync(
+                timestampMs = dev.deviceai.models.currentTimeMillis(),
+                success = false,
+                errorCode = "network_error",
+            ))
+        }
+    }
+
+    // ── Public API ────────────────────────────────────────────────────────────
+
+    /**
+     * Record a telemetry event. No-op if telemetry is [TelemetryLevel.Off] or if the
+     * SDK is not in managed mode.
+     *
+     * Called internally by [llm] and [speech] modules — app code rarely needs this.
+     */
+    fun recordTelemetry(event: TelemetryEvent) {
+        telemetryEngine?.record(event)
+    }
+
+    /**
+     * Flush buffered telemetry events immediately.
+     *
+     * Call this when the device connects to Wi-Fi or when the app moves to the background.
+     * No-op if telemetry is [TelemetryLevel.Off].
+     */
+    suspend fun flushTelemetry() {
+        telemetryEngine?.flush()
+    }
 
     // ── Observability ─────────────────────────────────────────────────────────
 
     // TODO: Phase 2 — val status: StateFlow<RuntimeStatus>
-    // TODO: Phase 2 — val capabilityTier: CapabilityTier?
     // TODO: Phase 2 — val modelStatus: StateFlow<Map<Module, ModelStatus>>
 
-    /** The environment this instance was initialized with, or null if not yet initialized. */
+    /** The environment this instance was initialized with, or `null` if not yet initialized. */
     val environment: Environment? get() = cloudConfig?.environment
 
-    /** `true` when running in [Environment.Development]. */
+    /** `true` when running in [Environment.Development] (no API key, local models only). */
     val isDevelopment: Boolean get() = environment == Environment.Development
+
+    /** `true` when running in managed mode (API key present, backend connected). */
+    val isManaged: Boolean get() = deviceSession != null
+
+    /** Capability tier assigned by the backend: `"low"`, `"mid"`, `"high"`, `"flagship"`. */
+    val capabilityTier: String? get() = deviceSession?.capabilityTier
+
+    // ── Module namespaces ─────────────────────────────────────────────────────
+    //
+    // LLM:    DeviceAI.llm    — added by kotlin/llm via extension property
+    // Speech: DeviceAI.speech — added by kotlin/speech via extension property
 }
 
+// Platform-provided session ID generator (UUID v4 string).
+internal expect fun generateSessionId(): String
