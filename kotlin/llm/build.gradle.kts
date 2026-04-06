@@ -92,9 +92,8 @@ mavenPublishing {
         }
         developers {
             developer {
-                id.set("nikhilbhutani")
+                id.set("NikhilBhutani")
                 name.set("Nikhil Bhutani")
-                url.set("https://github.com/NikhilBhutani")
                 url.set("https://github.com/NikhilBhutani")
             }
         }

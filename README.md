@@ -39,8 +39,8 @@ deviceai/
 ├── react-native/
 │   └── speech/     npm: react-native-deviceai-speech  🗓  TurboModule
 └── samples/
-    ├── composeApp/ Compose Multiplatform demo  ✅
-    └── iosApp/     native iOS shell            ✅
+    ├── androidApp/ Android demo app            ✅
+    └── iosApp/     native iOS sample           🚧 In progress
 ```
 
 ---
@@ -300,7 +300,9 @@ Browse all available models via `LlmCatalog`.
 
 | Platform | SDK | Status |
 |----------|-----|--------|
-| iOS / macOS | Swift Package (`swift/`) | 🚧 In progress |
+| iOS | Swift Package (`swift/`) | 🚧 In progress |
+| iOS sample app | Native SwiftUI (`samples/iosApp/`) | 🚧 In progress |
+| macOS Desktop | Swift Package (`swift/`) | 🚧 In progress |
 | Flutter | Dart plugin | 🗓 Planned |
 | React Native | TurboModule | 🗓 Planned |
 
@@ -347,7 +349,7 @@ cd deviceai
 
 ## Sample App
 
-`samples/composeApp/` is a working Android demo app.
+`samples/androidApp/` is a working Android demo app.
 
 ```bash
 # Open in Android Studio and run on device/emulator

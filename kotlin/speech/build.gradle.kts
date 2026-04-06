@@ -85,7 +85,7 @@ mavenPublishing {
     pom {
         name.set("DeviceAI Runtime — Speech")
         description.set("Android library for on-device Speech-to-Text and Text-to-Speech")
-        url.set("https://github.com/deviceai-labs/runtime-kmp")
+        url.set("https://github.com/deviceai-labs/deviceai")
         licenses {
             license {
                 name.set("Apache-2.0")
@@ -94,15 +94,15 @@ mavenPublishing {
         }
         developers {
             developer {
-                id.set("nikhilbhutani")
+                id.set("NikhilBhutani")
                 name.set("Nikhil Bhutani")
                 url.set("https://github.com/NikhilBhutani")
             }
         }
         scm {
-            url.set("https://github.com/deviceai-labs/runtime-kmp")
-            connection.set("scm:git:git://github.com/deviceai-labs/runtime-kmp.git")
-            developerConnection.set("scm:git:ssh://github.com/deviceai-labs/runtime-kmp.git")
+            url.set("https://github.com/deviceai-labs/deviceai")
+            connection.set("scm:git:git://github.com/deviceai-labs/deviceai.git")
+            developerConnection.set("scm:git:ssh://github.com/deviceai-labs/deviceai.git")
         }
     }
 }
