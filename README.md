@@ -1,12 +1,12 @@
 # DeviceAI Runtime
 
-**On-device AI runtime for Kotlin, iOS, Flutter, and React Native. Ship speech recognition, synthesis, and LLM inference on Android, iOS, and Desktop — no cloud required, no latency, no privacy risk.**
+**On-device AI runtime for Android, Desktop, iOS, Flutter, and React Native. Ship speech recognition, synthesis, and LLM inference — no cloud required, no latency, no privacy risk.**
 
 [![Build](https://github.com/deviceai-labs/deviceai/actions/workflows/ci.yml/badge.svg)](https://github.com/deviceai-labs/deviceai/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 [![Maven Central](https://img.shields.io/maven-central/v/dev.deviceai/speech)](https://central.sonatype.com/artifact/dev.deviceai/speech)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.2-blueviolet?logo=kotlin)](https://kotlinlang.org)
-[![KMP](https://img.shields.io/badge/Kotlin_Multiplatform-Android%20%7C%20iOS%20%7C%20Desktop-blue)](https://www.jetbrains.com/kotlin-multiplatform/)
+[![Android](https://img.shields.io/badge/Platform-Android-green)](https://developer.android.com)
 
 ---
 
@@ -14,14 +14,14 @@
 
 | Module | Language | Distribution | Status |
 |--------|----------|--------------|--------|
-| `kotlin/core` | Kotlin (Android + KMP) | Maven Central `dev.deviceai:core` | ✅ Available |
-| `kotlin/speech` | Kotlin (Android + KMP) | Maven Central `dev.deviceai:speech` | ✅ Available |
-| `kotlin/llm` | Kotlin (Android + KMP) | Maven Central `dev.deviceai:llm` | ✅ Available |
-| `ios/speech` | Swift | Swift Package Index | 🗓 Planned |
+| `kotlin/core` | Kotlin (Android + JVM) | Maven Central `dev.deviceai:core` | ✅ Available |
+| `kotlin/speech` | Kotlin (Android + JVM) | Maven Central `dev.deviceai:speech` | ✅ Available |
+| `kotlin/llm` | Kotlin (Android + JVM) | Maven Central `dev.deviceai:llm` | ✅ Available |
+| `swift/` | Swift | Swift Package Manager | 🚧 In progress |
 | `flutter/speech` | Dart | pub.dev `deviceai_speech` | 🗓 Planned |
 | `react-native/speech` | TypeScript | npm `react-native-deviceai-speech` | 🗓 Planned |
 
-Each SDK is **independent and native to its platform** — they all call the same C++ engines (whisper.cpp, sherpa-onnx, llama.cpp) directly, with no cross-language bridging.
+Each SDK is **independent and native to its platform** — they all call the same C++ engines (whisper.cpp, sherpa-onnx, llama.cpp) directly, with no cross-language bridging. The Kotlin SDK targets Android and Desktop JVM. iOS is served by a dedicated Swift SDK.
 
 ---
 
@@ -33,8 +33,7 @@ deviceai/
 │   ├── core/       dev.deviceai:core    ✅  model management, storage, logging
 │   ├── speech/     dev.deviceai:speech  ✅  STT (Whisper) + TTS (sherpa-onnx) + VAD
 │   └── llm/        dev.deviceai:llm     ✅  LLM inference via llama.cpp + offline RAG
-├── ios/
-│   └── speech/     Swift Package            🗓  Swift async/await wrapper
+├── swift/              Swift Package            🚧  Native iOS/macOS SDK
 ├── flutter/
 │   └── speech/     pub.dev: deviceai_speech 🗓  Flutter plugin
 ├── react-native/
@@ -46,7 +45,7 @@ deviceai/
 
 ---
 
-## Integration — Kotlin (Android, KMP, Desktop)
+## Integration — Android (Kotlin)
 
 ### Step 1 — Add dependencies
 
@@ -81,34 +80,6 @@ class MainActivity : ComponentActivity() {
         }
         setContent { App() }
     }
-}
-```
-
-#### iOS (Kotlin side of a KMP project)
-
-```kotlin
-import dev.deviceai.core.DeviceAI
-import dev.deviceai.core.Environment
-
-private val sdkInit by lazy {
-    DeviceAI.initialize { environment = Environment.Development }
-}
-
-fun MainViewController(): UIViewController {
-    sdkInit
-    return ComposeUIViewController { App() }
-}
-```
-
-#### Desktop
-
-```kotlin
-import dev.deviceai.core.DeviceAI
-import dev.deviceai.core.Environment
-
-fun main() = application {
-    DeviceAI.initialize { environment = Environment.Development }
-    Window(onCloseRequest = ::exitApplication, title = "My App") { App() }
 }
 ```
 
@@ -171,7 +142,7 @@ SpeechBridge.initTts(
 )
 
 val pcm: ShortArray = SpeechBridge.synthesize("Hello from DeviceAI.")
-// Play with AudioTrack (Android), AVAudioEngine (iOS), or javax.sound (Desktop)
+// Play with AudioTrack
 
 SpeechBridge.shutdownTts()
 ```
@@ -253,24 +224,22 @@ DeviceAI.initialize(context, apiKey) { environment = Environment.Development }
     │       DeviceAI           — unified SDK entry point
     │       CoreSDKLogger       — structured, environment-aware logging
     │       ModelRegistry       — model discovery, download, local management
-    │       PlatformStorage     — cross-platform file I/O
+    │       PlatformStorage     — Android file I/O
     │
     ├── kotlin/speech  (dev.deviceai:speech)
     │       SpeechBridge        — unified STT + TTS Kotlin API
     │           │
-    │           ├── Android / Desktop  →  JNI → libdeviceai_speech_jni.so/.dylib
-    │           └── iOS  →  C Interop → libspeech_merged.a
-    │                           ├── whisper.cpp   (STT)
-    │                           └── sherpa-onnx   (TTS + VAD)
+    │           └── JNI → libspeech_jni.so
+    │                   ├── whisper.cpp   (STT)
+    │                   └── sherpa-onnx   (TTS + VAD)
     │
     └── kotlin/llm  (dev.deviceai:llm)
             DeviceAI.llm.chat()   — creates a ChatSession
             ChatSession            — stateful conversation, streaming Flow<String>
             BM25RagStore           — offline retrieval-augmented generation
                 │
-                ├── Android / Desktop  →  JNI → libdeviceai_llm_jni.so/.dylib
-                └── iOS  →  C Interop → libllm_merged.a
-                                └── llama.cpp (Metal + CoreML)
+                └── JNI → libdeviceai_llm_jni.so
+                        └── llama.cpp (Vulkan GPU)
 ```
 
 ---
@@ -279,17 +248,17 @@ DeviceAI.initialize(context, apiKey) { environment = Environment.Development }
 
 | Feature | Status |
 |---------|--------|
-| Speech-to-Text (Whisper) | ✅ Android, iOS, Desktop |
-| Text-to-Speech (sherpa-onnx VITS / Kokoro) | ✅ Android, iOS, Desktop |
-| Voice Activity Detection (Silero VAD) | ✅ Android, iOS, Desktop |
-| LLM inference (llama.cpp) | ✅ Android, iOS, Desktop |
-| Offline RAG (BM25) | ✅ Android, iOS, Desktop |
-| Streaming LLM generation (`Flow<String>`) | ✅ Android, iOS, Desktop |
+| Speech-to-Text (Whisper) | ✅ Android |
+| Text-to-Speech (sherpa-onnx VITS / Kokoro) | ✅ Android |
+| Voice Activity Detection (Silero VAD) | ✅ Android |
+| LLM inference (llama.cpp) | ✅ Android |
+| Offline RAG (BM25) | ✅ Android |
+| Streaming LLM generation (`Flow<String>`) | ✅ Android |
 | Stateful `ChatSession` with auto history | ✅ |
 | Auto model download (HuggingFace) | ✅ |
 | GPU acceleration (Metal / Vulkan) | ✅ |
 | Cloud backend — OTA models, telemetry | 🚧 In progress |
-| Swift SDK | 🗓 Planned |
+| Swift SDK (iOS / macOS) | 🚧 In progress |
 | Flutter plugin | 🗓 Planned |
 | React Native module | 🗓 Planned |
 | Tool calling / voice agents | 🗓 Planned |
@@ -321,11 +290,19 @@ Browse all available models via `LlmCatalog`.
 
 ## Platform support
 
+### Kotlin SDK (this repo)
+
 | Platform | STT | TTS | LLM | Sample App |
 |----------|-----|-----|-----|------------|
 | Android (API 26+) | ✅ | ✅ | ✅ | ✅ |
-| iOS 17+ | ✅ | ✅ | ✅ | ✅ |
-| macOS Desktop | ✅ | ✅ | ✅ | ✅ |
+
+### Coming soon
+
+| Platform | SDK | Status |
+|----------|-----|--------|
+| iOS / macOS | Swift Package (`swift/`) | 🚧 In progress |
+| Flutter | Dart plugin | 🗓 Planned |
+| React Native | TurboModule | 🗓 Planned |
 
 ---
 
@@ -341,19 +318,16 @@ Browse all available models via `LlmCatalog`.
 
 ## Building from source
 
-**Prerequisites:** CMake 3.22+, Android NDK r26+, Xcode 26+ (iOS), Kotlin 2.2+
+**Prerequisites:** CMake 3.22+, Android NDK r26+, Kotlin 2.2+, Android Studio
 
 ```bash
 git clone --recursive https://github.com/deviceai-labs/deviceai.git
 cd deviceai
 
 # Compile checks
-./gradlew :kotlin:core:compileKotlinJvm
-./gradlew :kotlin:speech:compileKotlinJvm
-./gradlew :kotlin:llm:compileKotlinJvm
-
-# Run the desktop sample
-./gradlew :samples:composeApp:run
+./gradlew :kotlin:core:compileDebugKotlinAndroid
+./gradlew :kotlin:speech:compileDebugKotlinAndroid
+./gradlew :kotlin:llm:compileDebugKotlinAndroid
 ```
 
 ---
@@ -364,7 +338,7 @@ cd deviceai
 - [x] `DeviceAI` unified entry point with `Environment` + `CloudConfig` DSL
 - [x] `ChatSession` — stateful multi-turn LLM conversations
 - [ ] Backend integration — device registration, OTA model assignment, telemetry
-- [ ] Swift SDK — native iOS/macOS package
+- [ ] Swift SDK — native iOS/macOS package (in progress)
 - [ ] Flutter SDK
 - [ ] React Native SDK
 - [ ] Tool calling / voice agents (`DeviceAI.agent`)
@@ -373,15 +347,10 @@ cd deviceai
 
 ## Sample App
 
-`samples/composeApp/` is a working Compose Multiplatform demo. Runs on Android, iOS, and Desktop.
+`samples/composeApp/` is a working Android demo app.
 
 ```bash
-# Desktop
-./gradlew :samples:composeApp:run
-
-# Android — open in Android Studio and run on device/emulator
-
-# iOS — open samples/iosApp/iosApp.xcodeproj in Xcode and run
+# Open in Android Studio and run on device/emulator
 ```
 
 ---

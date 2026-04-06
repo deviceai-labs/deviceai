@@ -34,7 +34,7 @@ jobs:
   publish-kotlin:
     name: Publish kotlin/* to Maven Central
     if: startsWith(github.ref, 'refs/tags/kotlin/') || (github.event_name == 'workflow_dispatch' && github.event.inputs.module == 'kotlin')
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
 
     permissions:
       contents: read

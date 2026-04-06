@@ -17,8 +17,6 @@ kotlin {
         publishLibraryVariants("release")
     }
 
-    jvm()
-
     sourceSets {
         commonMain.dependencies {
             implementation(libs.kotlin.stdlib)
@@ -32,9 +30,6 @@ kotlin {
             implementation(libs.kotlin.test)
         }
         androidMain.dependencies {
-            implementation(libs.ktor.client.okhttp)
-        }
-        jvmMain.dependencies {
             implementation(libs.ktor.client.okhttp)
         }
     }
