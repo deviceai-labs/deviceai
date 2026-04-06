@@ -1,10 +1,5 @@
 package dev.deviceai
 
-import android.content.Context
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.platform.LocalContext
-import java.io.File
-
 @Suppress("EXPECT_ACTUAL_CLASSIFIERS_ARE_IN_BETA_WARNING")
 actual object SpeechBridge {
 
@@ -74,20 +69,6 @@ actual object SpeechBridge {
     // ══════════════════════════════════════════════════════════════
     //                         UTILITIES
     // ══════════════════════════════════════════════════════════════
-
-    @Composable
-    actual fun getModelPath(modelFileName: String): String {
-        val context = LocalContext.current
-        val outFile = File(context.cacheDir, modelFileName)
-        if (!outFile.exists()) {
-            context.assets.open(modelFileName).use { input ->
-                outFile.outputStream().use { output ->
-                    input.copyTo(output)
-                }
-            }
-        }
-        return outFile.absolutePath
-    }
 
     actual fun shutdown() {
         shutdownStt()

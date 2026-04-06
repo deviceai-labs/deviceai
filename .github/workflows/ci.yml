@@ -39,14 +39,11 @@ jobs:
           key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle.kts', '**/gradle-wrapper.properties') }}
           restore-keys: gradle-${{ runner.os }}-
 
-      - name: Compile kotlin/speech (JVM)
-        run: ./gradlew :kotlin:speech:compileKotlinJvm --no-daemon
+      - name: Compile kotlin/core (Android)
+        run: ./gradlew :kotlin:core:compileDebugKotlinAndroid --no-daemon
 
       - name: Compile kotlin/speech (Android)
         run: ./gradlew :kotlin:speech:compileDebugKotlinAndroid --no-daemon
-
-      - name: Compile kotlin/llm (JVM)
-        run: ./gradlew :kotlin:llm:compileKotlinJvm --no-daemon
 
       - name: Compile kotlin/llm (Android)
         run: ./gradlew :kotlin:llm:compileDebugKotlinAndroid --no-daemon

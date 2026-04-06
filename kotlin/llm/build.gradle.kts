@@ -1,5 +1,4 @@
 import com.android.build.api.dsl.LibraryExtension
-import org.jetbrains.kotlin.gradle.ExperimentalKotlinGradlePluginApi
 
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
@@ -14,66 +13,9 @@ version = (System.getenv("RELEASE_VERSION") ?: "0.2.0-alpha02")
 kotlin {
     jvmToolchain(17)
 
-    // Shared jvmCommon source set — avoids copy-paste between androidMain and jvmMain.
-    @OptIn(ExperimentalKotlinGradlePluginApi::class)
-    applyDefaultHierarchyTemplate {
-        common {
-            group("jvmCommon") {
-                withAndroidTarget()
-                withJvm()
-            }
-        }
-    }
-
     androidTarget {
         publishLibraryVariants("release")
     }
-
-    jvm()
-
-    val isMacOs = org.gradle.internal.os.OperatingSystem.current().isMacOsX
-
-    if (isMacOs) {
-
-    fun findTool(name: String): String {
-        System.getenv("${name.uppercase()}_PATH")?.let { if (file(it).canExecute()) return it }
-        val candidates = listOf("/opt/homebrew/bin/$name", "/usr/local/bin/$name", "/usr/bin/$name")
-        try {
-            val out = providers.exec { commandLine("which", name) }
-                .standardOutput.asText.get().trim()
-            if (out.isNotEmpty() && file(out).canExecute()) return out
-        } catch (_: Throwable) {}
-        for (p in candidates) if (file(p).canExecute()) return p
-        throw GradleException("Cannot find '$name'. Install via 'brew install $name'.")
-    }
-
-    val cmakePath = findTool("cmake")
-
-    // Desktop JNI build
-    val macJniBuildDir = layout.buildDirectory.dir("llm-jni/macos").get().asFile
-
-    val buildLlmJniDesktop by tasks.registering(Exec::class) {
-        group = "llm-native"
-        doFirst {
-            macJniBuildDir.mkdirs()
-            commandLine(cmakePath, "-S",
-                projectDir.resolve("cmake/llm-jni-desktop").absolutePath,
-                "-B", macJniBuildDir.absolutePath,
-                "-DCMAKE_BUILD_TYPE=Release",
-                "-DCMAKE_SYSTEM_NAME=Darwin"
-            )
-        }
-    }
-
-    val compileLlmJniDesktop by tasks.registering(Exec::class) {
-        group = "llm-native"
-        dependsOn(buildLlmJniDesktop)
-        commandLine(cmakePath, "--build", macJniBuildDir.absolutePath, "--config", "Release")
-    }
-
-    tasks.named("build").configure { dependsOn("compileLlmJniDesktop") }
-
-    } // end isMacOs
 
     sourceSets {
         commonMain.dependencies {
@@ -89,9 +31,6 @@ kotlin {
             implementation(libs.kotlin.test)
         }
         androidMain.dependencies {
-            implementation(libs.ktor.client.okhttp)
-        }
-        jvmMain.dependencies {
             implementation(libs.ktor.client.okhttp)
         }
     }
@@ -143,7 +82,7 @@ mavenPublishing {
 
     pom {
         name.set("DeviceAI Runtime — LLM")
-        description.set("Kotlin Multiplatform library for on-device LLM inference via llama.cpp")
+        description.set("Android library for on-device LLM inference via llama.cpp")
         url.set("https://github.com/deviceai-labs/deviceai")
         licenses {
             license {
@@ -155,6 +94,7 @@ mavenPublishing {
             developer {
                 id.set("nikhilbhutani")
                 name.set("Nikhil Bhutani")
+                url.set("https://github.com/NikhilBhutani")
                 url.set("https://github.com/NikhilBhutani")
             }
         }

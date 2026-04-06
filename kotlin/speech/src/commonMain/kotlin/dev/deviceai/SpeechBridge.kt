@@ -1,7 +1,5 @@
 package dev.deviceai
 
-import androidx.compose.runtime.Composable
-
 @Suppress("EXPECT_ACTUAL_CLASSIFIERS_ARE_IN_BETA_WARNING")
 expect object SpeechBridge {
 
@@ -116,15 +114,6 @@ expect object SpeechBridge {
     // ══════════════════════════════════════════════════════════════
     //                         UTILITIES
     // ══════════════════════════════════════════════════════════════
-
-    /**
-     * Get model path, extracting from assets on Android if needed.
-     *
-     * @param modelFileName Name of model file
-     * @return Absolute path to model file
-     */
-    @Composable
-    fun getModelPath(modelFileName: String): String
 
     /**
      * Shutdown both STT and TTS, releasing all resources.
