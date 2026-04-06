@@ -4,8 +4,11 @@ import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
 
-@Suppress("EXPECT_ACTUAL_CLASSIFIERS_ARE_IN_BETA_WARNING")
-actual class AudioRecorder actual constructor() {
+/**
+ * Android microphone recorder.
+ * Records 16 kHz mono PCM audio and returns normalized float samples.
+ */
+class AudioRecorder {
 
     private val sampleRate = 16000
     private var audioRecord: AudioRecord? = null
@@ -13,7 +16,7 @@ actual class AudioRecorder actual constructor() {
     private var recordingThread: Thread? = null
     @Volatile private var isRecording = false
 
-    actual fun startRecording() {
+    fun startRecording() {
         if (isRecording) return
 
         val minBuffer = AudioRecord.getMinBufferSize(
@@ -32,7 +35,7 @@ actual class AudioRecorder actual constructor() {
                 bufferSize
             )
         } catch (e: SecurityException) {
-            return // Permission not granted — caller should show error
+            return
         }
 
         collectedSamples.clear()
@@ -53,7 +56,7 @@ actual class AudioRecorder actual constructor() {
         }.also { it.start() }
     }
 
-    actual fun stopRecording(): FloatArray {
+    fun stopRecording(): FloatArray {
         if (!isRecording) return FloatArray(0)
         isRecording = false
         recordingThread?.join()

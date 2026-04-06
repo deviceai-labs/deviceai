@@ -1,4 +1,4 @@
-rootProject.name = "deviceai-runtime-kmp"
+rootProject.name = "deviceai"
 
 pluginManagement {
     repositories {
@@ -18,4 +18,4 @@ dependencyResolutionManagement {
 include(":kotlin:core")
 include(":kotlin:speech")
 include(":kotlin:llm")
-include(":samples:composeApp")
+include(":samples:androidApp")

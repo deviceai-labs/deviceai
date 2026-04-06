@@ -49,4 +49,4 @@ jobs:
         run: ./gradlew :kotlin:llm:compileDebugKotlinAndroid --no-daemon
 
       - name: Compile sample app (Android)
-        run: ./gradlew :samples:composeApp:compileDebugKotlinAndroid --no-daemon
+        run: ./gradlew :samples:androidApp:compileDebugKotlin --no-daemon
