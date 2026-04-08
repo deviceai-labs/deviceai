@@ -9,6 +9,8 @@ data class ManifestResponse(
     @SerialName("device_id")  val deviceId: String,
     @SerialName("app_id")     val appId: String,
     val tier: String,
+    @SerialName("issued_at")  val issuedAt: String,
+    @SerialName("expires_at") val expiresAt: String,
     val models: List<ManifestEntry>,
     val signature: String,
 )
