@@ -34,28 +34,25 @@ typedef enum {
 
 /* ── Manifest types ────────────────────────────────────────────────────────── */
 
-#define DAI_MANIFEST_MODEL_ID_LEN   128
-#define DAI_MANIFEST_URL_LEN        512
-#define DAI_MANIFEST_CHECKSUM_LEN   64
-#define DAI_MANIFEST_FORMAT_LEN     32
-#define DAI_MANIFEST_MAX_ENTRIES    64
+#define DAI_MANIFEST_MAX_MODELS     64
 
 typedef struct {
-    char    model_id[DAI_MANIFEST_MODEL_ID_LEN];
-    char    download_url[DAI_MANIFEST_URL_LEN];
-    char    checksum_sha256[DAI_MANIFEST_CHECKSUM_LEN];
+    char    module[32];                 /**< "llm", "speech", etc. */
+    char    model_id[128];
+    char    version[32];
+    char    sha256[65];                 /**< hex-encoded SHA-256 */
     int64_t size_bytes;
-    char    format[DAI_MANIFEST_FORMAT_LEN];        /**< "gguf", "onnx", etc. */
-    int     is_required;
-    int     kill_switch;
-    char    min_app_version[32];
-} dai_manifest_entry_t;
+    char    cdn_path[512];              /**< CDN path for artifact download */
+    char    rollout_id[64];             /**< UUID of the rollout that assigned this model */
+} dai_manifest_model_t;
 
 typedef struct {
-    dai_manifest_entry_t entries[DAI_MANIFEST_MAX_ENTRIES];
-    int                  entry_count;
-    char                 rollout_id[64];
-    int64_t              fetched_at_ms;
+    char    device_id[64];
+    char    app_id[64];
+    char    tier[32];                   /**< capability tier: "low"/"mid"/"high"/"flagship" */
+    dai_manifest_model_t models[DAI_MANIFEST_MAX_MODELS];
+    int     model_count;
+    int64_t fetched_at_ms;
 } dai_manifest_t;
 
 /* ── Capability profile ────────────────────────────────────────────────────── */

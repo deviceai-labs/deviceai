@@ -222,44 +222,44 @@ dai_error_t dai_backend_fetch_manifest(
     } else if (resp->status_code < 200 || resp->status_code >= 300) {
         result = DAI_ERR_HTTP;
     } else if (resp->body) {
-        // Parse rollout_id
-        extract_str(resp->body, "rollout_id", out_manifest->rollout_id,
-                    sizeof(out_manifest->rollout_id));
+        memset(out_manifest, 0, sizeof(*out_manifest));
         if (platform->clock_ms)
             out_manifest->fetched_at_ms = platform->clock_ms();
 
-        // Parse entries array — find "entries":[...]
-        // This is a best-effort incremental parser for the known schema.
-        const char* arr_start = strstr(resp->body, "\"entries\":[");
+        // Parse top-level fields
+        extract_str(resp->body, "device_id", out_manifest->device_id, sizeof(out_manifest->device_id));
+        extract_str(resp->body, "app_id",    out_manifest->app_id,    sizeof(out_manifest->app_id));
+        extract_str(resp->body, "tier",      out_manifest->tier,      sizeof(out_manifest->tier));
+
+        // Parse "models":[...] array (Go backend sends "models", not "entries")
+        const char* arr_start = strstr(resp->body, "\"models\":[");
         if (arr_start) {
             arr_start = strchr(arr_start, '[') + 1;
             const char* cursor = arr_start;
-            out_manifest->entry_count = 0;
+            out_manifest->model_count = 0;
 
-            while (*cursor && out_manifest->entry_count < DAI_MANIFEST_MAX_ENTRIES) {
+            while (*cursor && out_manifest->model_count < DAI_MANIFEST_MAX_MODELS) {
                 const char* obj_start = strchr(cursor, '{');
                 if (!obj_start) break;
                 const char* obj_end = strchr(obj_start, '}');
                 if (!obj_end) break;
 
-                // Extract into a null-terminated sub-string for extract_* helpers
                 size_t obj_len = (size_t)(obj_end - obj_start) + 1;
                 std::string obj_str(obj_start, obj_len);
                 const char* obj = obj_str.c_str();
 
-                dai_manifest_entry_t& entry = out_manifest->entries[out_manifest->entry_count];
-                memset(&entry, 0, sizeof(entry));
+                dai_manifest_model_t& m = out_manifest->models[out_manifest->model_count];
+                memset(&m, 0, sizeof(m));
 
-                extract_str(obj, "model_id",       entry.model_id,         DAI_MANIFEST_MODEL_ID_LEN);
-                extract_str(obj, "download_url",   entry.download_url,     DAI_MANIFEST_URL_LEN);
-                extract_str(obj, "checksum_sha256",entry.checksum_sha256,  DAI_MANIFEST_CHECKSUM_LEN);
-                extract_str(obj, "format",         entry.format,           DAI_MANIFEST_FORMAT_LEN);
-                extract_str(obj, "min_app_version",entry.min_app_version,  sizeof(entry.min_app_version));
-                int64_t sz = 0; extract_i64(obj, "size_bytes", &sz); entry.size_bytes = sz;
-                extract_int(obj, "is_required",    &entry.is_required);
-                extract_int(obj, "kill_switch",    &entry.kill_switch);
+                extract_str(obj, "module",     m.module,     sizeof(m.module));
+                extract_str(obj, "model_id",   m.model_id,   sizeof(m.model_id));
+                extract_str(obj, "version",    m.version,    sizeof(m.version));
+                extract_str(obj, "sha256",     m.sha256,     sizeof(m.sha256));
+                extract_str(obj, "cdn_path",   m.cdn_path,   sizeof(m.cdn_path));
+                extract_str(obj, "rollout_id", m.rollout_id, sizeof(m.rollout_id));
+                int64_t sz = 0; extract_i64(obj, "size_bytes", &sz); m.size_bytes = sz;
 
-                out_manifest->entry_count++;
+                out_manifest->model_count++;
                 cursor = obj_end + 1;
             }
         }
