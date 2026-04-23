@@ -18,6 +18,9 @@
 #include <string>
 #include <vector>
 #include <mutex>
+#ifdef ANDROID
+#include <android/log.h>
+#endif
 #include <atomic>
 #include <chrono>
 
@@ -52,7 +55,11 @@ static JNIEnv* get_env(bool* did_attach) {
     JNIEnv* env = nullptr;
     jint status = g_jvm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6);
     if (status == JNI_EDETACHED) {
+#ifdef ANDROID
+        g_jvm->AttachCurrentThread(&env, nullptr);
+#else
         g_jvm->AttachCurrentThread(reinterpret_cast<void**>(&env), nullptr);
+#endif
         *did_attach = true;
     } else {
         *did_attach = false;
