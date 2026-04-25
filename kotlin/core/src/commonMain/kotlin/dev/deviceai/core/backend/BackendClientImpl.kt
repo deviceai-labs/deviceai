@@ -31,12 +31,13 @@ internal class BackendClientImpl(
 
     private val jsonCodec = Json { ignoreUnknownKeys = true }
 
-    override suspend fun registerDevice(capabilityProfile: Map<String, Any?>): DeviceSession {
+    override suspend fun registerDevice(capabilityProfile: Map<String, Any?>, fingerprint: String): DeviceSession {
         val response = http.post("$baseUrl/v1/devices/register") {
             bearerAuth(apiKey)
             contentType(ContentType.Application.Json)
             setBody(buildJsonObject {
                 put("capability_profile", capabilityProfile.toJsonObject())
+                if (fingerprint.isNotEmpty()) put("device_fingerprint", fingerprint)
             })
         }
         val body = response.body<JsonObject>()
