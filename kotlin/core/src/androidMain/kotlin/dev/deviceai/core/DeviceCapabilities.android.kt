@@ -5,6 +5,8 @@ import android.content.Context
 import android.os.Build
 import android.os.Environment
 import android.os.StatFs
+import android.provider.Settings
+import java.security.MessageDigest
 
 actual fun detectCapabilities(context: Any?): DeviceCapabilities {
     val ctx = context as? Context
@@ -55,4 +57,14 @@ actual fun detectCapabilities(context: Any?): DeviceCapabilities {
         gpuRenderer        = gpuRenderer,
         storageAvailableMb = storageAvailableMb,
     )
+}
+
+actual fun generateFingerprint(context: Any?, apiKey: String?): String {
+    val ctx = context as? Context ?: return ""
+    val key = apiKey ?: return ""
+    val androidId = Settings.Secure.getString(ctx.contentResolver, Settings.Secure.ANDROID_ID)
+        ?: return ""
+    val raw = "$androidId:$key"
+    val digest = MessageDigest.getInstance("SHA-256").digest(raw.toByteArray())
+    return digest.joinToString("") { "%02x".format(it) }
 }

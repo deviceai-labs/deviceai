@@ -35,6 +35,7 @@ class CloudConfig private constructor(
     val capabilityProfile: Map<String, Any?>,
     val appVersion: String?,
     val appAttributes: Map<String, String>,
+    val deviceFingerprint: String,
 ) {
 
     class Builder internal constructor(private val apiKey: String? = null) {
@@ -130,6 +131,7 @@ class CloudConfig private constructor(
             }
             // Auto-detect hardware → developer overrides → SDK metadata
             val detected = try { detectCapabilities(context).toMap() } catch (_: Exception) { emptyMap() }
+            val fingerprint = try { generateFingerprint(context, apiKey) } catch (_: Exception) { "" }
             val fullProfile = buildMap<String, Any?> {
                 putAll(detected)              // auto-detected hardware (base)
                 putAll(capabilityProfile)      // developer overrides (wins over auto-detected)
@@ -149,6 +151,7 @@ class CloudConfig private constructor(
                 capabilityProfile    = fullProfile,
                 appVersion           = appVersion,
                 appAttributes        = appAttributes,
+                deviceFingerprint    = fingerprint ?: "",
             )
         }
     }

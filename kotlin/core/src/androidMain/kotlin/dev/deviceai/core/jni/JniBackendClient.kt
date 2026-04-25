@@ -18,8 +18,11 @@ internal class JniBackendClient(
 
     private val json = Json { ignoreUnknownKeys = true }
 
-    override suspend fun registerDevice(capabilityProfile: Map<String, Any?>): DeviceSession {
-        val (keys, vals) = capabilityProfile.toJniArrays()
+    override suspend fun registerDevice(capabilityProfile: Map<String, Any?>, fingerprint: String): DeviceSession {
+        val profileWithFingerprint = if (fingerprint.isNotEmpty()) {
+            capabilityProfile + ("device_fingerprint" to fingerprint)
+        } else capabilityProfile
+        val (keys, vals) = profileWithFingerprint.toJniArrays()
         val result = CoreJniBridge.registerDevice(baseUrl, apiKey, keys, vals)
             ?: error("registerDevice returned null — check API key and network")
 

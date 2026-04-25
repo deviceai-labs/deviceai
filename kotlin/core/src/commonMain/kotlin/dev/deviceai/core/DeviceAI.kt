@@ -65,6 +65,9 @@ object DeviceAI {
     // Stable session ID for the lifetime of this process (not persisted).
     internal val processSessionId: String = generateSessionId()
 
+    // Device fingerprint — stable across reinstalls. Set during initialize() on Android.
+    internal var deviceFingerprint: String = ""
+
     // ── Initialization ────────────────────────────────────────────────────────
 
     /**
@@ -188,7 +191,7 @@ object DeviceAI {
 
         // Register fresh.
         return try {
-            val session = client.registerDevice(config.capabilityProfile)
+            val session = client.registerDevice(config.capabilityProfile, config.deviceFingerprint)
             SessionStore.save(session)
             session
         } catch (e: Exception) {

@@ -40,3 +40,13 @@ data class DeviceCapabilities(
  * @param context Android Context (required on Android, ignored on other platforms).
  */
 expect fun detectCapabilities(context: Any?): DeviceCapabilities
+
+/**
+ * Generate a stable device fingerprint that survives app reinstalls.
+ * Used by the backend to identify the same physical device across installs.
+ *
+ * @param context Android Context.
+ * @param apiKey  API key — included in hash so different apps get different fingerprints.
+ * @return SHA-256 hex string, or empty if unavailable.
+ */
+expect fun generateFingerprint(context: Any?, apiKey: String?): String
