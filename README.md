@@ -1,6 +1,6 @@
 # DeviceAI
 
-**On-device AI inference for Android — speech recognition, text-to-speech, and LLM generation. Optionally managed from the cloud with OTA model updates, telemetry, and cohort targeting.**
+**On-device AI for Android — speech recognition, text-to-speech, and LLM chat. Zero cloud latency, zero privacy risk. Optional cloud backend for OTA model updates, telemetry, and device management.**
 
 [![Build](https://github.com/deviceai-labs/deviceai/actions/workflows/ci.yml/badge.svg)](https://github.com/deviceai-labs/deviceai/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
@@ -10,140 +10,87 @@
 
 ---
 
-## What DeviceAI does
-
-1. **On-device inference** — STT (whisper.cpp), TTS (sherpa-onnx), LLM (llama.cpp) run entirely on the device. No cloud latency, no privacy risk.
-2. **Cloud control plane** (optional) — register devices, push OTA model updates, collect telemetry, target cohorts by device capability, kill-switch bad rollouts instantly.
-3. **Auto hardware detection** — RAM, CPU cores, SoC model, NNAPI availability detected automatically. Backend assigns the right model for each device.
-
----
-
-## SDKs
-
-| Module | Language | Distribution | Status |
-|--------|----------|--------------|--------|
-| `kotlin/core` | Kotlin (Android) | Maven Central `dev.deviceai:core` | ✅ Available |
-| `kotlin/speech` | Kotlin (Android) | Maven Central `dev.deviceai:speech` | ✅ Available |
-| `kotlin/llm` | Kotlin (Android) | Maven Central `dev.deviceai:llm` | ✅ Available |
-| `swift/` | Swift (iOS / macOS) | Swift Package Manager | 🚧 In progress |
-| `flutter/` | Dart | pub.dev | 🗓 Planned |
-| `react-native/` | TypeScript | npm | 🗓 Planned |
-
-Each SDK calls the same C++ engines directly via `sdk/deviceai-commons/` — no cross-language wrapping.
-
----
-
-## Repository structure
-
-```
-deviceai/
-├── sdk/
-│   └── deviceai-commons/        Pure C++ shared layer (all platforms)
-│       ├── VERSIONS             Pinned deps (whisper, llama, sherpa-onnx)
-│       ├── CMakeLists.txt       Root CMake with feature flags
-│       ├── cmake/               FetchContent for C++ dependencies
-│       ├── scripts/             Pre-built binary download scripts
-│       └── src/
-│           ├── core/            Session, telemetry, backend client (C headers + impl)
-│           ├── backends/        whisper/, llamacpp/, sherpa_onnx/
-│           ├── bridges/jni/     JNI bridge C++ (Android)
-│           └── utils/           json_builder
-│
-├── kotlin/
-│   ├── core/                    dev.deviceai:core
-│   ├── speech/                  dev.deviceai:speech
-│   └── llm/                    dev.deviceai:llm
-│
-├── swift/                       Swift SDK (in progress)
-├── samples/androidApp/          Android demo app
-└── .github/workflows/           CI + publish
-```
-
----
-
-## Quick start — Android
-
-### 1. Add dependencies
+## Install
 
 ```kotlin
 // build.gradle.kts
 implementation("dev.deviceai:core:0.3.0-alpha01")
-implementation("dev.deviceai:speech:0.3.0-alpha01")
-implementation("dev.deviceai:llm:0.3.0-alpha01")
+implementation("dev.deviceai:speech:0.3.0-alpha01")   // STT + TTS
+implementation("dev.deviceai:llm:0.3.0-alpha01")      // LLM + RAG
 ```
 
-### 2. Initialize
+---
+
+## Initialize
 
 ```kotlin
-class MainActivity : ComponentActivity() {
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
+class MyApp : Application() {
+    override fun onCreate() {
+        super.onCreate()
         PlatformStorage.initialize(this)
-
-        // Local mode — no cloud, no API key
-        DeviceAI.initialize(context = this) {
-            environment = Environment.Development
-        }
-
-        setContent { App() }
+        DeviceAI.initialize(context = this)
     }
 }
 ```
 
-### With cloud backend
+That's it. The SDK runs fully on-device with no backend required.
+
+### With cloud backend (optional)
 
 ```kotlin
 DeviceAI.initialize(context = this, apiKey = "dai_live_...") {
-    environment = Environment.Staging
-    telemetry   = TelemetryLevel.Minimal
-    appVersion  = BuildConfig.VERSION_NAME
-    // Hardware (RAM, CPU, SoC, NNAPI) is auto-detected — no need to set it.
-    // Add custom targeting attributes only:
-    appAttributes = mapOf("user_tier" to "premium")
+    telemetry = TelemetryLevel.Minimal
+    appVersion = BuildConfig.VERSION_NAME
 }
 ```
 
-The SDK auto-detects device capabilities and sends them at registration:
-```json
-{
-  "capability_profile": {
-    "ram_gb": 7.6, "cpu_cores": 8, "has_nnapi": true,
-    "soc_model": "SM8550", "storage_available_mb": 45000,
-    "sdk_version": "0.3.0-alpha01", "platform": "android"
-  }
-}
-```
+The API key connects the SDK to the DeviceAI cloud backend. Device hardware (RAM, CPU, SoC) is detected automatically — no manual configuration needed.
 
-The backend scores the device tier and assigns the right model.
+---
 
-### 3. Speech-to-Text
+## Speech-to-Text
 
 ```kotlin
 SpeechBridge.initStt(modelPath, SttConfig(language = "en", useGpu = true))
-val text = SpeechBridge.transcribeAudio(samples) // FloatArray, 16kHz mono
+
+// From raw audio samples
+val text = SpeechBridge.transcribeAudio(samples)  // FloatArray, 16kHz mono
+
+// From a WAV file
+val textFromFile = SpeechBridge.transcribe("/path/to/audio.wav")
+
 SpeechBridge.shutdownStt()
 ```
 
-### 4. Text-to-Speech
+Powered by [whisper.cpp](https://github.com/ggerganov/whisper.cpp). Runs 7× faster than real-time on mid-range Android hardware.
+
+## Text-to-Speech
 
 ```kotlin
 SpeechBridge.initTts(modelPath, tokensPath, TtsConfig(speechRate = 1.0f))
+
 val pcm: ShortArray = SpeechBridge.synthesize("Hello from DeviceAI.")
+// Play with AudioTrack
+
 SpeechBridge.shutdownTts()
 ```
 
-### 5. LLM chat
+Powered by [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx). Supports VITS and Kokoro voice models.
+
+## LLM Chat
 
 ```kotlin
 val session = DeviceAI.llm.chat("/path/to/model.gguf") {
     systemPrompt = "You are a helpful assistant."
-    maxTokens = 512; temperature = 0.7f; useGpu = true
+    maxTokens = 512
+    temperature = 0.7f
+    useGpu = true
 }
 
-// Streaming
+// Streaming (recommended for UI)
 session.send("What is Kotlin?").collect { token -> print(token) }
 
-// Multi-turn — history automatic
+// Multi-turn — history managed automatically
 session.send("Give me an example.").collect { print(it) }
 
 // Lifecycle
@@ -152,7 +99,9 @@ session.clearHistory()  // fresh conversation
 session.close()         // unload model
 ```
 
-### 6. Offline RAG
+Powered by [llama.cpp](https://github.com/ggerganov/llama.cpp). Supports any GGUF model with Vulkan GPU acceleration.
+
+## Offline RAG
 
 ```kotlin
 val store = BM25RagStore(rawChunks = listOf(
@@ -163,83 +112,81 @@ val session = DeviceAI.llm.chat("/path/to/model.gguf") { ragStore = store }
 session.send("What GPU does DeviceAI use?").collect { print(it) }
 ```
 
+No embedding model needed — BM25 keyword retrieval runs entirely on-device.
+
 ---
 
-## Cloud control plane
+## Telemetry
 
-The SDK optionally connects to a Go backend for managed mode:
+When telemetry is enabled, the SDK automatically tracks performance metrics for all modules:
 
-| Feature | What it does |
+### What's collected
+
+| Module | Metrics |
+|--------|---------|
+| **STT** | Model load time, transcription latency, audio duration (input_length_ms) |
+| **TTS** | Model load time, synthesis latency, text length (output_chars) |
+| **LLM** | Model load time, inference latency, time-to-first-token, tokens/sec, token counts, finish reason |
+
+### What's NEVER collected
+
+- Prompt or response text content
+- Audio recordings or transcript content
+- PII by default
+
+> Apps should avoid putting PII in `appAttributes`, since developer-provided attributes are sent in the capability profile.
+
+### Telemetry levels
+
+```kotlin
+// Off (default) — nothing sent
+DeviceAI.initialize(context = this, apiKey = "dai_live_...") {
+    telemetry = TelemetryLevel.Off
+}
+
+// Minimal — model load/unload + inference metrics
+DeviceAI.initialize(context = this, apiKey = "dai_live_...") {
+    telemetry = TelemetryLevel.Minimal
+}
+
+// Full — includes OTA downloads + manifest syncs
+DeviceAI.initialize(context = this, apiKey = "dai_live_...") {
+    telemetry = TelemetryLevel.Full
+}
+```
+
+Events are batched on-device and delivered efficiently — respects Wi-Fi preference, data-saver mode, and flushes automatically when the app goes to background.
+
+### Custom telemetry sink
+
+Route events to your own analytics instead of the DeviceAI backend:
+
+```kotlin
+DeviceAI.initialize(context = this, apiKey = "dai_live_...") {
+    telemetry = TelemetryLevel.Minimal
+    telemetrySink = object : TelemetrySink {
+        override suspend fun ingest(events: List<TelemetryEvent>) {
+            myAnalytics.track(events)
+        }
+    }
+}
+```
+
+---
+
+## Cloud Backend
+
+The SDK optionally connects to a cloud control plane. When an API key is provided:
+
+| Feature | What happens |
 |---|---|
-| **Device registration** | Auto-register with capability profile, get JWT token (30-day, auto-refresh) |
-| **Manifest sync** | Backend assigns models per device tier (low/mid/high/flagship), synced every 6h |
-| **OTA model updates** | Push new models via canary → rollout → full, with instant kill-switch |
-| **Telemetry** | Inference latency, TTFT, tokens/sec, model load time — batched, network-aware |
-| **Cohort targeting** | Deterministic bucketing by device capabilities, app version, custom attributes |
+| **Device registration** | Automatic — hardware profile sent, capability tier assigned |
+| **Model manifest** | Backend assigns the right model for each device tier, synced every 6h |
+| **OTA updates** | Push new models with canary rollouts and instant kill-switch |
+| **Telemetry** | Performance metrics batched and delivered (when enabled) |
+| **Device identity** | Stable across reinstalls — same device always gets the same ID |
 
-### Environments
-
-| Environment | Base URL | API key |
-|---|---|---|
-| `Development` | `localhost:8080` | Not required |
-| `Staging` | `staging.api.deviceai.dev` | Required |
-| `Production` | `api.deviceai.dev` | Required |
-
-Backend repo: [`deviceai-labs/cloud`](https://github.com/deviceai-labs/cloud)
-
----
-
-## Architecture
-
-```
-Your App
-    │
-    ▼
-DeviceAI.initialize(context, apiKey)
-    │
-    ├── kotlin/core (dev.deviceai:core)
-    │       DeviceAI             entry point + cloud bootstrap
-    │       DeviceCapabilities   auto-detect RAM, CPU, SoC, NNAPI
-    │       TelemetryEngine      three-priority buffer (normal/wifi/critical)
-    │       BackendClient        device registration, manifest, telemetry
-    │       CoreJniBridge    ──→ JNI → libdeviceai_core_jni.so
-    │                                  └── sdk/deviceai-commons/src/core/
-    │
-    ├── kotlin/speech (dev.deviceai:speech)
-    │       SpeechBridge     ──→ JNI → libspeech_jni.so
-    │                                  ├── whisper.cpp (STT)
-    │                                  └── sherpa-onnx (TTS + VAD)
-    │
-    └── kotlin/llm (dev.deviceai:llm)
-            ChatSession
-            BM25RagStore     ──→ JNI → libdeviceai_llm_jni.so
-                                       └── llama.cpp (Vulkan GPU)
-```
-
-C++ dependencies fetched at build time via CMake FetchContent (no git submodules).
-
----
-
-## Features
-
-| Feature | Status |
-|---------|--------|
-| Speech-to-Text (whisper.cpp) | ✅ Android |
-| Text-to-Speech (sherpa-onnx VITS / Kokoro) | ✅ Android |
-| Voice Activity Detection | ✅ Android |
-| LLM inference (llama.cpp, GGUF) | ✅ Android |
-| Streaming generation (`Flow<String>`) | ✅ Android |
-| Stateful `ChatSession` with auto history | ✅ |
-| Offline RAG (BM25) | ✅ |
-| Auto model download (HuggingFace) | ✅ |
-| GPU acceleration (Vulkan) | ✅ |
-| Auto hardware detection | ✅ |
-| Cloud backend — registration, manifest, telemetry | ✅ Staging live |
-| SoC-based capability tier scoring | ✅ Server-side |
-| OTA model rollouts + kill switch | ✅ Backend ready |
-| Swift SDK (iOS / macOS) | 🚧 In progress |
-| Flutter plugin | 🗓 Planned |
-| React Native module | 🗓 Planned |
+No cloud calls are made without an API key. Local mode works fully offline.
 
 ---
 
@@ -262,33 +209,44 @@ C++ dependencies fetched at build time via CMake FetchContent (no git submodules
 | Llama-3.2-1B-Instruct (Q4) | ~700 MB | Strong reasoning |
 | SmolLM2-1.7B-Instruct (Q4) | ~1 GB | Balanced |
 
-Browse all available models via `LlmCatalog`.
+Browse LLM models with `LlmCatalog`. Download Whisper/TTS models via `ModelRegistry`.
+
+---
+
+## Features
+
+| Feature | Status |
+|---------|--------|
+| Speech-to-Text (whisper.cpp) | ✅ |
+| Text-to-Speech (sherpa-onnx VITS / Kokoro) | ✅ |
+| Voice Activity Detection | ✅ |
+| LLM inference (llama.cpp, GGUF) | ✅ |
+| Streaming generation (`Flow<String>`) | ✅ |
+| Stateful multi-turn chat | ✅ |
+| Offline RAG (BM25) | ✅ |
+| Auto model download (HuggingFace) | ✅ |
+| GPU acceleration (Vulkan) | ✅ |
+| Cloud backend (registration, manifest, telemetry) | ✅ |
+| Auto hardware detection | ✅ |
+| Stable device identity (survives reinstall) | ✅ |
+| STT/TTS/LLM telemetry | ✅ |
+| Custom telemetry sink | ✅ |
+| OTA model rollouts + kill switch | ✅ |
+| Swift SDK (iOS / macOS) | 🚧 In progress |
+| Flutter plugin | 🗓 Planned |
+| React Native module | 🗓 Planned |
+| Developer dashboard | 🗓 Planned |
 
 ---
 
 ## Platform support
 
-| Platform | STT | TTS | LLM | Cloud | Status |
-|----------|-----|-----|-----|-------|--------|
-| Android (API 26+) | ✅ | ✅ | ✅ | ✅ | Available |
-| iOS / macOS | — | — | — | — | Swift SDK in progress |
-| Flutter | — | — | — | — | Planned |
-| React Native | — | — | — | — | Planned |
-
----
-
-## Building from source
-
-```bash
-git clone https://github.com/deviceai-labs/deviceai.git
-cd deviceai
-make setup                                          # download sherpa-onnx pre-built binaries
-./gradlew :kotlin:core:compileDebugKotlinAndroid
-./gradlew :kotlin:speech:compileDebugKotlinAndroid
-./gradlew :kotlin:llm:compileDebugKotlinAndroid
-```
-
-No `--recursive` needed — C++ dependencies are fetched automatically by CMake FetchContent at build time.
+| Platform | STT | TTS | LLM | Status |
+|----------|-----|-----|-----|--------|
+| Android (API 26+) | ✅ | ✅ | ✅ | Available |
+| iOS / macOS | — | — | — | Swift SDK in progress |
+| Flutter | — | — | — | Planned |
+| React Native | — | — | — | Planned |
 
 ---
 
@@ -302,21 +260,16 @@ No `--recursive` needed — C++ dependencies are fetched automatically by CMake 
 
 ---
 
-## Roadmap
+## Building from source
 
-- [x] Kotlin SDK — speech, LLM, RAG, streaming
-- [x] `DeviceAI` entry point + `CloudConfig` DSL
-- [x] `ChatSession` — stateful multi-turn conversations
-- [x] `sdk/deviceai-commons` — shared C++ layer with FetchContent
-- [x] Backend integration — registration, manifest, telemetry
-- [x] Auto hardware detection + SoC-based tier scoring
-- [x] Staging backend live (`staging.api.deviceai.dev`)
-- [ ] Swift SDK — native iOS/macOS package
-- [ ] Flutter SDK
-- [ ] React Native SDK
-- [ ] OTA model download from R2 CDN
-- [ ] Developer dashboard (Next.js)
-- [ ] Tool calling / voice agents
+```bash
+git clone https://github.com/deviceai-labs/deviceai.git
+cd deviceai
+make setup
+./gradlew :kotlin:core:compileDebugKotlinAndroid
+./gradlew :kotlin:speech:compileDebugKotlinAndroid
+./gradlew :kotlin:llm:compileDebugKotlinAndroid
+```
 
 ---
 
