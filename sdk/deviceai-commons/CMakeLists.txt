@@ -35,6 +35,17 @@ if(DAI_ENABLE_LLM)
     add_subdirectory(src/backends/llamacpp)
 endif()
 
+# ── Feature engines (shared inference logic) ─────────────────
+if(DAI_ENABLE_STT)
+    add_subdirectory(src/features/stt)
+endif()
+if(DAI_ENABLE_TTS)
+    add_subdirectory(src/features/tts)
+endif()
+if(DAI_ENABLE_LLM)
+    add_subdirectory(src/features/llm)
+endif()
+
 # ── Core infrastructure ──────────────────────────────────────
 if(DAI_ENABLE_CORE)
     add_subdirectory(src/core)
