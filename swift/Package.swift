@@ -13,12 +13,14 @@ let package = Package(
         .library(name: "DeviceAILLM", targets: ["DeviceAILLM"]),
     ],
     targets: [
-        // ── C interop module (bridges to native C++ engines) ─────────
-        // When XCFrameworks are built, replace this with binaryTargets:
-        //   .binaryTarget(name: "CWhisper", path: "Binaries/CWhisper.xcframework"),
-        //   .binaryTarget(name: "CLlama", path: "Binaries/CLlama.xcframework"),
+        // ── Pre-built C++ engines as XCFrameworks ────────────────────
+        .binaryTarget(name: "CWhisper", path: "Binaries/CWhisper.xcframework"),
+        .binaryTarget(name: "CLlama", path: "Binaries/CLlama.xcframework"),
+
+        // ── C interop module ─────────────────────────────────────────
         .target(
             name: "CDeviceAI",
+            dependencies: ["CWhisper", "CLlama"],
             path: "Sources/CDeviceAI",
             publicHeadersPath: "include"
         ),
