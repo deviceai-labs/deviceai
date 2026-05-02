@@ -56,6 +56,10 @@ CustomImpl.md
 sdk/deviceai-commons/prebuilt/
 _deps/
 
+# Swift XCFrameworks (built locally via build-xcframeworks.sh)
+swift/Binaries/
+.build-xcframeworks/
+
 # Legacy submodule directories
 llama.cpp/
 espeak-ng/
