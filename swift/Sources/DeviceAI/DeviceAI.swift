@@ -114,8 +114,9 @@ public final class DeviceAI: Sendable {
         _session.withLock { $0 = nil }
     }
 
-    /// Record a telemetry event. Called internally by speech and LLM modules.
-    internal func recordEvent(_ event: TelemetryEvent) {
+    /// Record a telemetry event. Called by speech and LLM modules.
+    /// Not intended for direct app developer use.
+    public func recordEvent(_ event: TelemetryEvent) {
         _telemetryEngine.withLock { $0 }?.record(event)
     }
 
