@@ -13,6 +13,16 @@ let package = Package(
         .library(name: "DeviceAILLM", targets: ["DeviceAILLM"]),
     ],
     targets: [
+        // ── C interop module (bridges to native C++ engines) ─────────
+        // When XCFrameworks are built, replace this with binaryTargets:
+        //   .binaryTarget(name: "CWhisper", path: "Binaries/CWhisper.xcframework"),
+        //   .binaryTarget(name: "CLlama", path: "Binaries/CLlama.xcframework"),
+        .target(
+            name: "CDeviceAI",
+            path: "Sources/CDeviceAI",
+            publicHeadersPath: "include"
+        ),
+
         // ── Core module (entry point + cloud + telemetry) ────────────
         .target(
             name: "DeviceAI",
@@ -22,14 +32,14 @@ let package = Package(
         // ── Speech module (STT + TTS) ────────────────────────────────
         .target(
             name: "DeviceAISpeech",
-            dependencies: ["DeviceAI"],
+            dependencies: ["DeviceAI", "CDeviceAI"],
             path: "Sources/DeviceAISpeech"
         ),
 
         // ── LLM module (chat + RAG) ─────────────────────────────────
         .target(
             name: "DeviceAILLM",
-            dependencies: ["DeviceAI"],
+            dependencies: ["DeviceAI", "CDeviceAI"],
             path: "Sources/DeviceAILLM"
         ),
 

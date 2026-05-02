@@ -1,0 +1,4 @@
+module CDeviceAI {
+    header "shim.h"
+    export *
+}
