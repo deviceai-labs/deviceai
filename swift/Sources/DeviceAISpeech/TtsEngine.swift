@@ -1,71 +1,60 @@
 import Foundation
 import DeviceAI
+import CDeviceAI
 
 /// Text-to-Speech engine wrapping sherpa-onnx via dai_tts_* C API.
-///
-/// ```swift
-/// let tts = try await TtsEngine(modelPath: path, tokensPath: tokens)
-/// let audio = try await tts.synthesize("Hello from DeviceAI")
-/// tts.shutdown()
-/// ```
 public final class TtsEngine: @unchecked Sendable {
     private let modelId: String
-    private let config: TtsConfig
     private var isInitialized = false
 
-    /// Initialize the TTS engine.
-    ///
-    /// - Parameters:
-    ///   - modelPath: Path to .onnx model file.
-    ///   - tokensPath: Path to tokens.txt vocabulary file.
-    ///   - config: TTS configuration.
     public init(modelPath: String, tokensPath: String, config: TtsConfig = TtsConfig()) async throws {
-        self.config = config
         self.modelId = (modelPath as NSString).lastPathComponent
+        let startMs = currentTimeMs()
 
-        let startMs = Int64(Date().timeIntervalSince1970 * 1000)
-
-        // TODO: Call dai_tts_init via C interop when XCFrameworks are available
-        isInitialized = false
-
-        let durationMs = Int64(Date().timeIntervalSince1970 * 1000) - startMs
-        DeviceAI.shared.recordEvent(.modelLoad(module: "tts", modelId: modelId, durationMs: durationMs))
-    }
-
-    /// Synthesize text to audio samples.
-    ///
-    /// - Parameter text: Text to synthesize.
-    /// - Returns: Int16 audio samples (mono, ~22050 Hz).
-    public func synthesize(_ text: String) async throws -> [Int16] {
-        let startMs = Int64(Date().timeIntervalSince1970 * 1000)
-
-        // TODO: Call dai_tts_synthesize via C interop
-        throw DeviceAIError.initFailed(reason: "Native engine not yet linked — XCFrameworks required")
-    }
-
-    /// Synthesize text directly to a WAV file.
-    public func synthesizeToFile(_ text: String, outputPath: String) async throws -> Bool {
-        // TODO: Call dai_tts_synthesize_to_file via C interop
-        throw DeviceAIError.initFailed(reason: "Native engine not yet linked — XCFrameworks required")
-    }
-
-    /// Streaming synthesis with audio chunk callbacks.
-    public func synthesizeStream(_ text: String) -> AsyncThrowingStream<[Int16], Error> {
-        AsyncThrowingStream { continuation in
-            // TODO: Call dai_tts_synthesize_stream via C interop
-            continuation.finish(throwing: DeviceAIError.initFailed(reason: "Native engine not yet linked"))
+        let ok = dai_tts_init(
+            modelPath, tokensPath, config.dataDir, config.voicesPath,
+            Int32(config.speakerId ?? -1), config.speechRate
+        )
+        guard ok else {
+            throw DeviceAIError.initFailed(reason: "Failed to load TTS model: \(modelPath)")
         }
+        isInitialized = true
+        DeviceAI.shared.recordEvent(.modelLoad(module: "tts", modelId: modelId, durationMs: currentTimeMs() - startMs))
     }
 
-    /// Cancel ongoing synthesis.
-    public func cancel() {
-        // TODO: dai_tts_cancel()
+    public func synthesize(_ text: String) async throws -> [Int16] {
+        guard isInitialized else { throw DeviceAIError.initFailed(reason: "TTS not initialized") }
+        let startMs = currentTimeMs()
+        var outLen: Int32 = 0
+        let result = dai_tts_synthesize(text, &outLen)
+        let latencyMs = currentTimeMs() - startMs
+
+        guard let result, outLen > 0 else {
+            DeviceAI.shared.recordEvent(.inferenceComplete(module: "tts", modelId: modelId, latencyMs: latencyMs, outputChars: text.count, finishReason: "empty"))
+            return []
+        }
+        let samples = Array(UnsafeBufferPointer(start: result, count: Int(outLen)))
+        dai_tts_free_audio(result)
+        DeviceAI.shared.recordEvent(.inferenceComplete(module: "tts", modelId: modelId, latencyMs: latencyMs, outputChars: text.count, finishReason: "stop"))
+        return samples
     }
 
-    /// Release TTS resources and unload model.
+    public func synthesizeToFile(_ text: String, outputPath: String) async throws -> Bool {
+        guard isInitialized else { throw DeviceAIError.initFailed(reason: "TTS not initialized") }
+        let startMs = currentTimeMs()
+        let ok = dai_tts_synthesize_to_file(text, outputPath)
+        DeviceAI.shared.recordEvent(.inferenceComplete(module: "tts", modelId: modelId, latencyMs: currentTimeMs() - startMs, outputChars: text.count, finishReason: ok ? "stop" : "error"))
+        return ok
+    }
+
+    public func cancel() { dai_tts_cancel() }
+
     public func shutdown() {
+        guard isInitialized else { return }
         DeviceAI.shared.recordEvent(.modelUnload(module: "tts", modelId: modelId))
-        // TODO: dai_tts_shutdown()
+        dai_tts_shutdown()
         isInitialized = false
     }
+
+    private func currentTimeMs() -> Int64 { Int64(Date().timeIntervalSince1970 * 1000) }
 }

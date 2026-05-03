@@ -1,5 +1,6 @@
 import Foundation
 import DeviceAI
+import CDeviceAI
 
 /// Speech-to-Text engine wrapping whisper.cpp via dai_stt_* C API.
 ///
@@ -10,77 +11,94 @@ import DeviceAI
 /// ```
 public final class SttEngine: @unchecked Sendable {
     private let modelId: String
-    private let config: SttConfig
     private var isInitialized = false
 
     /// Initialize the STT engine with a whisper model.
-    ///
-    /// - Parameters:
-    ///   - modelPath: Absolute path to .bin model file (ggml format).
-    ///   - config: STT configuration.
-    /// - Throws: `DeviceAIError.initFailed` if model loading fails.
     public init(modelPath: String, config: SttConfig = SttConfig()) async throws {
-        self.config = config
         self.modelId = (modelPath as NSString).lastPathComponent
 
-        let startMs = Int64(Date().timeIntervalSince1970 * 1000)
+        let startMs = currentTimeMs()
 
-        // TODO: Call dai_stt_init via C interop when XCFrameworks are available
-        // dai_stt_init(modelPath, config.language, config.translateToEnglish,
-        //              config.maxThreads, config.useGpu, config.useVad,
-        //              config.singleSegment, config.noContext)
-        isInitialized = false // Will be true when native engine is linked
+        let ok = dai_stt_init(
+            modelPath,
+            config.language,
+            config.translateToEnglish,
+            Int32(config.maxThreads),
+            config.useGpu,
+            config.useVad,
+            config.singleSegment,
+            config.noContext
+        )
 
-        let durationMs = Int64(Date().timeIntervalSince1970 * 1000) - startMs
+        guard ok else {
+            throw DeviceAIError.initFailed(reason: "Failed to load whisper model: \(modelPath)")
+        }
+
+        isInitialized = true
+        let durationMs = currentTimeMs() - startMs
         DeviceAI.shared.recordEvent(.modelLoad(module: "stt", modelId: modelId, durationMs: durationMs))
     }
 
     /// Transcribe raw PCM audio samples.
-    ///
-    /// - Parameter samples: Float array of audio samples (16kHz, mono, normalized -1.0 to 1.0).
-    /// - Returns: Transcribed text.
-    /// - Throws: `DeviceAIError.inferenceFailed` on failure.
     public func transcribe(samples: [Float]) async throws -> String {
-        let startMs = Int64(Date().timeIntervalSince1970 * 1000)
+        guard isInitialized else { throw DeviceAIError.initFailed(reason: "STT not initialized") }
+
+        let startMs = currentTimeMs()
         let audioDurationMs = Int(Float(samples.count) / 16000.0 * 1000.0)
 
-        // TODO: Call dai_stt_transcribe_audio via C interop
-        // let result = dai_stt_transcribe_audio(samples, samples.count)
-        throw DeviceAIError.initFailed(reason: "Native engine not yet linked — XCFrameworks required")
+        let result = samples.withUnsafeBufferPointer { ptr -> UnsafeMutablePointer<CChar>? in
+            dai_stt_transcribe_audio(ptr.baseAddress, Int32(samples.count))
+        }
+
+        let latencyMs = currentTimeMs() - startMs
+
+        guard let result else {
+            DeviceAI.shared.recordEvent(.inferenceComplete(
+                module: "stt", modelId: modelId, latencyMs: latencyMs,
+                inputLengthMs: audioDurationMs, finishReason: "empty"
+            ))
+            return ""
+        }
+
+        let text = String(cString: result)
+        dai_stt_free_string(result)
+
+        DeviceAI.shared.recordEvent(.inferenceComplete(
+            module: "stt", modelId: modelId, latencyMs: latencyMs,
+            inputLengthMs: audioDurationMs, finishReason: "stop"
+        ))
+
+        return text
     }
 
     /// Transcribe a WAV file.
-    ///
-    /// - Parameter audioPath: Path to WAV file (16kHz, mono, 16-bit PCM).
-    /// - Returns: Transcribed text.
     public func transcribe(audioPath: String) async throws -> String {
-        // TODO: Call dai_stt_transcribe via C interop
-        throw DeviceAIError.initFailed(reason: "Native engine not yet linked — XCFrameworks required")
-    }
+        guard isInitialized else { throw DeviceAIError.initFailed(reason: "STT not initialized") }
 
-    /// Transcribe with detailed results including segments and timestamps.
-    public func transcribeDetailed(audioPath: String) async throws -> TranscriptionResult {
-        // TODO: Call dai_stt_transcribe_detailed via C interop
-        throw DeviceAIError.initFailed(reason: "Native engine not yet linked — XCFrameworks required")
-    }
+        let startMs = currentTimeMs()
+        let result = dai_stt_transcribe(audioPath)
+        let latencyMs = currentTimeMs() - startMs
 
-    /// Transcribe with streaming partial results.
-    public func transcribeStream(samples: [Float]) -> AsyncThrowingStream<String, Error> {
-        AsyncThrowingStream { continuation in
-            // TODO: Call dai_stt_transcribe_stream via C interop
-            continuation.finish(throwing: DeviceAIError.initFailed(reason: "Native engine not yet linked"))
-        }
+        guard let result else { return "" }
+        let text = String(cString: result)
+        dai_stt_free_string(result)
+
+        DeviceAI.shared.recordEvent(.inferenceComplete(
+            module: "stt", modelId: modelId, latencyMs: latencyMs, finishReason: "stop"
+        ))
+        return text
     }
 
     /// Cancel ongoing transcription.
-    public func cancel() {
-        // TODO: dai_stt_cancel()
-    }
+    public func cancel() { dai_stt_cancel() }
 
     /// Release STT resources and unload model.
     public func shutdown() {
+        guard isInitialized else { return }
         DeviceAI.shared.recordEvent(.modelUnload(module: "stt", modelId: modelId))
-        // TODO: dai_stt_shutdown()
+        dai_stt_shutdown()
         isInitialized = false
     }
+
+    private func currentTimeMs() -> Int64 { Int64(Date().timeIntervalSince1970 * 1000) }
 }
