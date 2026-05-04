@@ -178,7 +178,7 @@ LLAMA_SIM_LIB=$(merge_llama_libs "$LLAMA_SIM")
 LLAMA_HEADERS="$BUILD_DIR/llama-headers"
 mkdir -p "$LLAMA_HEADERS/CLlama"
 cp "$LLAMA_SRC/include/"llama*.h "$LLAMA_HEADERS/CLlama/"
-cp "$LLAMA_SRC/ggml/include/"ggml*.h "$LLAMA_HEADERS/CLlama/"
+# NOTE: ggml headers are NOT copied here — they come from CWhisper to avoid duplicates
 cat > "$LLAMA_HEADERS/CLlama/module.modulemap" << 'MAP'
 module CLlama {
     header "llama.h"
