@@ -16,15 +16,17 @@ let package = Package(
         // ── Pre-built C++ engines as XCFrameworks ────────────────────
         .binaryTarget(name: "CWhisper", path: "Binaries/CWhisper.xcframework"),
         .binaryTarget(name: "CLlama", path: "Binaries/CLlama.xcframework"),
+        .binaryTarget(name: "CSherpaOnnx", path: "Binaries/CSherpaOnnx.xcframework"),
 
         // ── C interop module (compiles features layer C++) ────────────
         .target(
             name: "CDeviceAI",
-            dependencies: ["CWhisper", "CLlama"],
+            dependencies: ["CWhisper", "CLlama", "CSherpaOnnx"],
             path: "Sources/CDeviceAI",
             publicHeadersPath: "include",
             cxxSettings: [
                 .headerSearchPath("include"),
+                .define("HAVE_SHERPA_ONNX", to: "1"),
             ],
             linkerSettings: [
                 .linkedFramework("Accelerate"),
