@@ -188,6 +188,72 @@ MAP
 
 create_xcframework "CLlama" "$LLAMA_HEADERS/CLlama" "$LLAMA_DEV_LIB" "$LLAMA_SIM_LIB"
 
+# ═══════════════════════════════════════════════════════════════
+#                       sherpa-onnx (TTS + VAD)
+# ═══════════════════════════════════════════════════════════════
+
+SHERPA_SRC="$BUILD_DIR/sherpa-onnx-src"
+if [ ! -d "$SHERPA_SRC" ]; then
+    echo "→ Cloning sherpa-onnx $SHERPA_ONNX_VERSION..."
+    git clone --depth 1 https://github.com/k2-fsa/sherpa-onnx.git "$SHERPA_SRC"
+    cd "$SHERPA_SRC" && git fetch --depth 1 origin "$SHERPA_ONNX_COMMIT" && git checkout "$SHERPA_ONNX_COMMIT"
+    cd "$REPO_ROOT"
+fi
+
+build_for_platform "sherpa-onnx" "$SHERPA_SRC" "iphoneos" "arm64" \
+    -DSHERPA_ONNX_ENABLE_TTS=ON \
+    -DSHERPA_ONNX_ENABLE_BINARY=OFF \
+    -DBUILD_SHARED_LIBS=OFF \
+    -DSHERPA_ONNX_ENABLE_CHECK=OFF \
+    -DSHERPA_ONNX_ENABLE_PORTAUDIO=OFF \
+    -DSHERPA_ONNX_ENABLE_WEBSOCKET=OFF \
+    -DSHERPA_ONNX_ENABLE_GPU=OFF
+
+build_for_platform "sherpa-onnx" "$SHERPA_SRC" "iphonesimulator" "arm64" \
+    -DSHERPA_ONNX_ENABLE_TTS=ON \
+    -DSHERPA_ONNX_ENABLE_BINARY=OFF \
+    -DBUILD_SHARED_LIBS=OFF \
+    -DSHERPA_ONNX_ENABLE_CHECK=OFF \
+    -DSHERPA_ONNX_ENABLE_PORTAUDIO=OFF \
+    -DSHERPA_ONNX_ENABLE_WEBSOCKET=OFF \
+    -DSHERPA_ONNX_ENABLE_GPU=OFF
+
+SHERPA_DEV="$BUILD_DIR/sherpa-onnx-iphoneos-arm64"
+SHERPA_SIM="$BUILD_DIR/sherpa-onnx-iphonesimulator-arm64"
+
+merge_sherpa_libs() {
+    local dir="$1"
+    local out="$dir/libsherpa_onnx_merged.a"
+    local libs=()
+    for f in "$dir"/lib/libsherpa-onnx*.a "$dir"/lib/libonnxruntime*.a "$dir"/lib/libkaldi*.a "$dir"/lib/libpiper*.a "$dir"/lib/libespeak*.a "$dir"/lib/libucd*.a; do
+        [ -f "$f" ] && libs+=("$f")
+    done
+    if [ ${#libs[@]} -eq 0 ]; then
+        # Try alternative paths
+        for f in "$dir"/_deps/*/lib*.a "$dir"/sherpa-onnx/lib*.a; do
+            [ -f "$f" ] && libs+=("$f")
+        done
+    fi
+    libtool -static -o "$out" "${libs[@]}" 2>/dev/null
+    echo "$out"
+}
+
+SHERPA_DEV_LIB=$(merge_sherpa_libs "$SHERPA_DEV")
+SHERPA_SIM_LIB=$(merge_sherpa_libs "$SHERPA_SIM")
+
+# Create headers dir
+SHERPA_HEADERS="$BUILD_DIR/sherpa-headers"
+mkdir -p "$SHERPA_HEADERS/CSherpaOnnx"
+cp "$SHERPA_SRC/sherpa-onnx/c-api/c-api.h" "$SHERPA_HEADERS/CSherpaOnnx/" 2>/dev/null || true
+cat > "$SHERPA_HEADERS/CSherpaOnnx/module.modulemap" << 'MAP'
+module CSherpaOnnx {
+    header "c-api.h"
+    export *
+}
+MAP
+
+create_xcframework "CSherpaOnnx" "$SHERPA_HEADERS/CSherpaOnnx" "$SHERPA_DEV_LIB" "$SHERPA_SIM_LIB"
+
 echo ""
 echo "=== XCFrameworks built ==="
 ls -la "$OUTPUT_DIR"/*.xcframework 2>/dev/null || echo "(none found)"
