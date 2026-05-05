@@ -26,7 +26,8 @@ let package = Package(
             publicHeadersPath: "include",
             cxxSettings: [
                 .headerSearchPath("include"),
-                .define("HAVE_SHERPA_ONNX", to: "1"),
+                // HAVE_SHERPA_ONNX is defined automatically when CSherpaOnnx headers are found
+                // via the XCFramework. On macOS swift build, TTS compiles as no-op stubs.
             ],
             linkerSettings: [
                 .linkedFramework("Accelerate"),
