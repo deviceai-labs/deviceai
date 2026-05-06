@@ -33,6 +33,7 @@ let package = Package(
                 .linkedFramework("Accelerate"),
                 .linkedFramework("Metal"),
                 .linkedFramework("MetalKit"),
+                .linkedLibrary("bz2"),
             ]
         ),
 
