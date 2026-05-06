@@ -110,6 +110,8 @@ merge_whisper_libs() {
     local dir="$1"
     local out="$dir/libwhisper_merged.a"
     local libs=("$dir/src/libwhisper.a")
+    # Include CoreML bridge if built
+    [ -f "$dir/src/libwhisper.coreml.a" ] && libs+=("$dir/src/libwhisper.coreml.a")
     for f in "$dir"/ggml/src/libggml*.a "$dir"/ggml/src/ggml-metal/libggml-metal.a "$dir"/ggml/src/ggml-blas/libggml-blas.a; do
         [ -f "$f" ] && libs+=("$f")
     done
