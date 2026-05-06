@@ -13,5 +13,6 @@
 #include "dai_stt.h"
 #include "dai_llm.h"
 #include "dai_tts.h"
+#include "dai_archive.h"
 
 #endif /* CDEVICEAI_SHIM_H */
