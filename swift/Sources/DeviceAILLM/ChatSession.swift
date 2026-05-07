@@ -16,11 +16,14 @@ import CDeviceAI
 public final class ChatSession: @unchecked Sendable {
     private let modelId: String
     private let config: ChatConfig
+    private let lock = NSLock()
     private var _history: [LlmMessage] = []
 
     public private(set) var isReady: Bool = false
 
     public var history: [ChatTurn] {
+        lock.lock()
+        defer { lock.unlock() }
         var turns: [ChatTurn] = []
         var i = 0
         while i + 1 < _history.count {
@@ -48,11 +51,15 @@ public final class ChatSession: @unchecked Sendable {
     }
 
     /// Send a user message and stream the response token by token.
-    public func send(_ text: String) -> AsyncThrowingStream<String, Error> {
-        precondition(!text.trimmingCharacters(in: .whitespaces).isEmpty)
+    public func send(_ text: String) throws -> AsyncThrowingStream<String, Error> {
+        guard !text.trimmingCharacters(in: .whitespaces).isEmpty else {
+            throw DeviceAIError.inferenceFailed(reason: "Message cannot be empty")
+        }
 
+        lock.lock()
         _history.append(LlmMessage(role: .user, content: text))
         let messages = [LlmMessage(role: .system, content: config.systemPrompt)] + _history
+        lock.unlock()
 
         let cfg = self.config
         let modelId = self.modelId
@@ -64,7 +71,6 @@ public final class ChatSession: @unchecked Sendable {
 
             var reply = ""
             var tokenCount = 0
-            var ttftMs: Int64? = nil
 
             // Build C string arrays
             let cRoles = roles.map { strdup($0) }
@@ -93,7 +99,6 @@ public final class ChatSession: @unchecked Sendable {
             if let cResult {
                 reply = String(cString: cResult)
                 dai_llm_free_string(cResult)
-                // Yield all at once (TODO: true streaming when C callback interop is resolved)
                 continuation.yield(reply)
                 tokenCount = reply.split(separator: " ").count // approximate
             }
@@ -104,11 +109,13 @@ public final class ChatSession: @unchecked Sendable {
                 outputTokenCount: tokenCount, finishReason: reply.isEmpty ? "empty" : "stop"
             ))
 
+            self.lock.lock()
             if !reply.isEmpty {
                 self._history.append(LlmMessage(role: .assistant, content: reply))
             } else {
                 self._history.removeLast()
             }
+            self.lock.unlock()
 
             continuation.finish()
         }
@@ -116,12 +123,17 @@ public final class ChatSession: @unchecked Sendable {
 
     public func sendBlocking(_ text: String) async throws -> String {
         var result = ""
-        for try await token in send(text) { result += token }
+        for try await token in try send(text) { result += token }
         return result
     }
 
     public func cancel() { dai_llm_cancel() }
-    public func clearHistory() { _history.removeAll() }
+
+    public func clearHistory() {
+        lock.lock()
+        _history.removeAll()
+        lock.unlock()
+    }
 
     public func close() {
         DeviceAI.shared.recordEvent(.modelUnload(module: "llm", modelId: modelId))
@@ -131,5 +143,3 @@ public final class ChatSession: @unchecked Sendable {
 
     private func currentTimeMs() -> Int64 { Int64(Date().timeIntervalSince1970 * 1000) }
 }
-
-private func currentTimeMs() -> Int64 { Int64(Date().timeIntervalSince1970 * 1000) }
