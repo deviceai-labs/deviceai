@@ -59,7 +59,13 @@ public final class DeviceAI: Sendable {
         }
 
         // ── Managed mode ─────────────────────────────────────────────
-        let client = BackendClient(baseUrl: config.resolvedBaseUrl, apiKey: apiKey)
+        let client: BackendClient
+        do {
+            client = try BackendClient(baseUrl: config.resolvedBaseUrl, apiKey: apiKey)
+        } catch {
+            Logger.shared.error("Invalid backend URL: \(config.resolvedBaseUrl)")
+            return
+        }
         shared._backendClient.withLock { $0 = client }
 
         if config.telemetry != .off {

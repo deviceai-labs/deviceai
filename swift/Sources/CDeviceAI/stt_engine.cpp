@@ -415,6 +415,9 @@ void dai_stt_transcribe_stream(
     std::vector<std::string> segment_texts;
     int n_seg = whisper_full_n_segments_from_state(state);
 
+    segment_texts.reserve(n_seg);
+    segments.reserve(n_seg);
+
     for (int i = 0; i < n_seg && !g_cancel_requested; i++) {
         const char *text = whisper_full_get_segment_text_from_state(state, i);
         if (text) {

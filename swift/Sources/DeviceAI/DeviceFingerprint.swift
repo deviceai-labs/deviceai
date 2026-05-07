@@ -3,6 +3,9 @@ import CryptoKit
 #if canImport(UIKit)
 import UIKit
 #endif
+#if canImport(IOKit)
+import IOKit
+#endif
 
 /// Generates a stable device fingerprint that survives app reinstalls.
 ///
@@ -29,7 +32,7 @@ internal enum DeviceFingerprint {
 
     #if os(macOS)
     private static func macOSHardwareUUID() -> String? {
-        let service = IOServiceGetMatchingService(kIOMasterPortDefault, IOServiceMatching("IOPlatformExpertDevice"))
+        let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("IOPlatformExpertDevice"))
         guard service != 0 else { return nil }
         defer { IOObjectRelease(service) }
         let uuidRef = IORegistryEntryCreateCFProperty(service, "IOPlatformUUID" as CFString, kCFAllocatorDefault, 0)

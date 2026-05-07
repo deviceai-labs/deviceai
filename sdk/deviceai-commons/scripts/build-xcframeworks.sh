@@ -7,7 +7,7 @@
 # Output:
 #   swift/Binaries/CWhisper.xcframework
 #   swift/Binaries/CLlama.xcframework
-#   swift/Binaries/CDeviceAIFeatures.xcframework
+#   swift/Binaries/CSherpaOnnx.xcframework
 
 set -euo pipefail
 
