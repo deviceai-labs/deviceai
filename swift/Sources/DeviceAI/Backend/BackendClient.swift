@@ -11,7 +11,10 @@ internal actor BackendClient {
         return d
     }()
 
-    init(baseUrl: String, apiKey: String) {
+    init(baseUrl: String, apiKey: String) throws {
+        guard URL(string: baseUrl) != nil else {
+            throw DeviceAIError.networkError(reason: "Invalid base URL: \(baseUrl)")
+        }
         self.baseUrl = baseUrl
         self.apiKey = apiKey
     }
@@ -69,7 +72,7 @@ internal actor BackendClient {
     // ── HTTP helpers ─────────────────────────────────────────────────
 
     private func post(_ path: String, body: [String: Any], bearerToken: String) async throws -> Data {
-        var request = URLRequest(url: URL(string: "\(baseUrl)\(path)")!)
+        var request = URLRequest(url: URL(string: "\(baseUrl)\(path)")! /* validated in init */)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(bearerToken)", forHTTPHeaderField: "Authorization")
@@ -80,7 +83,7 @@ internal actor BackendClient {
     }
 
     private func get(_ path: String, bearerToken: String) async throws -> Data {
-        var request = URLRequest(url: URL(string: "\(baseUrl)\(path)")!)
+        var request = URLRequest(url: URL(string: "\(baseUrl)\(path)")! /* validated in init */)
         request.setValue("Bearer \(bearerToken)", forHTTPHeaderField: "Authorization")
         let (data, response) = try await session.data(for: request)
         try checkResponse(response, data)
