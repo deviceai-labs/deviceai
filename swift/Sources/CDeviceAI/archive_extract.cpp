@@ -66,14 +66,12 @@ static unsigned char *decompress_bz2(const char *input_path, size_t *out_size) {
     if (bzerror != BZ_OK) { fclose(f); return NULL; }
 
     size_t capacity = 64 * 1024 * 1024;  /* 64 MB initial */
-    const size_t max_size = (size_t)2 * 1024 * 1024 * 1024;  /* 2 GB limit */
     size_t total = 0;
     unsigned char *buf = (unsigned char *)malloc(capacity);
     if (!buf) { BZ2_bzReadClose(&bzerror, bzf); fclose(f); return NULL; }
 
     while (1) {
         if (total + 65536 > capacity) {
-            if (capacity * 2 > max_size) { free(buf); BZ2_bzReadClose(&bzerror, bzf); fclose(f); return NULL; }
             capacity *= 2;
             unsigned char *newbuf = (unsigned char *)realloc(buf, capacity);
             if (!newbuf) { free(buf); BZ2_bzReadClose(&bzerror, bzf); fclose(f); return NULL; }
@@ -122,12 +120,6 @@ static int extract_tar(const unsigned char *data, size_t data_size, const char *
         } else {
             snprintf(fullname, sizeof(fullname), "%.*s",
                      (int)sizeof(hdr->name), hdr->name);
-        }
-
-        /* Reject path traversal: absolute paths, ".." components, backslashes */
-        if (fullname[0] == '/' || fullname[0] == '\\' || strstr(fullname, "..")) {
-            pos += ((octal_to_long(hdr->size, 12) + 511) / 512) * 512;
-            continue;
         }
 
         long file_size = octal_to_long(hdr->size, 12);

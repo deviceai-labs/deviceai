@@ -79,12 +79,7 @@ public final class SttEngine: @unchecked Sendable {
         let result = dai_stt_transcribe(audioPath)
         let latencyMs = currentTimeMs() - startMs
 
-        guard let result else {
-            DeviceAI.shared.recordEvent(.inferenceComplete(
-                module: "stt", modelId: modelId, latencyMs: latencyMs, finishReason: "empty"
-            ))
-            return ""
-        }
+        guard let result else { return "" }
         let text = String(cString: result)
         dai_stt_free_string(result)
 

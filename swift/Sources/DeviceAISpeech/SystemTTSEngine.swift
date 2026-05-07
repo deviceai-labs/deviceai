@@ -69,10 +69,6 @@ public final class SystemTTSEngine: NSObject, @unchecked Sendable {
 
         let startMs = currentTimeMs()
 
-        if continuation != nil {
-            synthesizer.stopSpeaking(at: .immediate)
-        }
-
         try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
             self.continuation = cont
             self.synthesizer.speak(utterance)
