@@ -58,6 +58,16 @@ Java_dev_deviceai_llm_engine_LlmJniEngine_nativeCancel(
     JNIEnv *env, jobject obj
 );
 
+// ═══════════════════════════════════════════════════════════════
+//                        COMPATIBILITY
+// ═══════════════════════════════════════════════════════════════
+
+JNIEXPORT jlong JNICALL
+Java_dev_deviceai_llm_engine_LlmJniEngine_nativeEstimatedMemoryBytes(
+    JNIEnv *env, jobject obj,
+    jlong modelSizeBytes
+);
+
 #ifdef __cplusplus
 }
 #endif
