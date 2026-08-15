@@ -88,4 +88,13 @@ internal object LlmJniEngine : LlmEngine {
     )
 
     private external fun nativeCancel()
+
+    /**
+     * Estimated peak RAM (bytes) needed to run a model of [sizeBytes]. Delegates
+     * to the shared C heuristic (dai_llm_estimated_memory_bytes) so every binding
+     * agrees. Pure — does not require a loaded model.
+     */
+    fun estimatedMemoryBytes(sizeBytes: Long): Long = nativeEstimatedMemoryBytes(sizeBytes)
+
+    private external fun nativeEstimatedMemoryBytes(modelSizeBytes: Long): Long
 }

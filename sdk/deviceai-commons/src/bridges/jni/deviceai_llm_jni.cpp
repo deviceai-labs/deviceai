@@ -152,4 +152,11 @@ Java_dev_deviceai_llm_engine_LlmJniEngine_nativeCancel(JNIEnv *, jobject) {
     dai_llm_cancel();
 }
 
+JNIEXPORT jlong JNICALL
+Java_dev_deviceai_llm_engine_LlmJniEngine_nativeEstimatedMemoryBytes(
+    JNIEnv *, jobject, jlong modelSizeBytes
+) {
+    return (jlong) dai_llm_estimated_memory_bytes((int64_t) modelSizeBytes);
+}
+
 } // extern "C"

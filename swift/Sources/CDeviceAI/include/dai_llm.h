@@ -84,6 +84,19 @@ void dai_llm_cancel(void);
 /** Free a string returned by dai_llm_generate(). */
 void dai_llm_free_string(char* str);
 
+/**
+ * Estimate the RAM needed to load and run a model of the given file size:
+ * quantized weights (resident under memory pressure) plus KV cache and compute
+ * buffers. Compare the result against the device's AVAILABLE memory, not total.
+ *
+ * Single source of truth for the footprint heuristic so every platform binding
+ * (Android/iOS/Flutter/RN) agrees. Pure — no model needs to be loaded.
+ *
+ * @param model_size_bytes GGUF file size in bytes.
+ * @return Estimated peak resident memory in bytes; 0 if model_size_bytes <= 0.
+ */
+int64_t dai_llm_estimated_memory_bytes(int64_t model_size_bytes);
+
 #ifdef __cplusplus
 }
 #endif

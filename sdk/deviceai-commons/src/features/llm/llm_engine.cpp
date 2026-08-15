@@ -273,4 +273,13 @@ void dai_llm_free_string(char* str) {
     free(str);
 }
 
+int64_t dai_llm_estimated_memory_bytes(int64_t model_size_bytes) {
+    if (model_size_bytes <= 0) return 0;
+    // Q4 weights (~1.0x, mmap'd but resident under memory pressure) plus KV
+    // cache and compute buffers (~0.3x for typical mobile contexts). Kept here
+    // so all bindings share one heuristic; refine (e.g. context/quant-aware)
+    // without touching any platform code.
+    return static_cast<int64_t>(static_cast<double>(model_size_bytes) * 1.3);
+}
+
 } // extern "C"
