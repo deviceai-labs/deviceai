@@ -66,9 +66,14 @@ public extension LlmCatalog {
         let availMem = availableMemoryBytes()
         let availStorage = availableStorageBytes()
         let scored = all.map { ($0, verdict($0, availMem, availStorage)) }
-        let topPickId = scored.filter { $0.1.canRun }.max { $0.0.sizeBytes < $1.0.sizeBytes }?.0.id
+        // Top pick must be fully usable — runnable AND downloadable. A model that
+        // fits in RAM but not on disk can't be installed, so never highlight it.
+        let topPickId = scored.filter { $0.1.isCompatible }.max { $0.0.sizeBytes < $1.0.sizeBytes }?.0.id
         return scored
             .sorted { a, b in
+                // Fully compatible first, then runnable-but-won't-fit, then the
+                // rest; within each group, largest (best quality) first.
+                if a.1.isCompatible != b.1.isCompatible { return a.1.isCompatible && !b.1.isCompatible }
                 if a.1.canRun != b.1.canRun { return a.1.canRun && !b.1.canRun }
                 return a.0.sizeBytes > b.0.sizeBytes
             }

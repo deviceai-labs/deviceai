@@ -64,20 +64,28 @@ fun compatibilityVerdict(
 )
 
 /**
- * Rank pre-scored (model, compatibility) pairs. Runnable models come first
- * (largest-that-fits = best quality the device can handle); the single
- * best-fitting model is flagged [ModelRecommendation.isTopPick].
+ * Rank pre-scored (model, compatibility) pairs for a download-driven list:
+ * fully-compatible models (run AND fit) first, then runnable-but-won't-fit,
+ * then the rest; within each group, largest (best quality) first. The single
+ * largest fully-compatible model is flagged [ModelRecommendation.isTopPick]
+ * (null if none are compatible).
  */
 fun rankByCompatibility(
     scored: List<Pair<LlmModelInfo, ModelCompatibility>>,
 ): List<ModelRecommendation> {
+    // Top pick must be fully usable — runnable AND downloadable. A model that
+    // fits in RAM but not on disk (canRun && !canFit) can't be installed, so it
+    // must never be the default/highlighted pick.
     val topPickId = scored
-        .filter { it.second.canRun }
+        .filter { it.second.isCompatible }
         .maxByOrNull { it.first.sizeBytes }
         ?.first?.id
     return scored
         .sortedWith(
-            compareByDescending<Pair<LlmModelInfo, ModelCompatibility>> { it.second.canRun }
+            // Fully compatible first, then runnable-but-won't-fit, then the rest;
+            // within each group, largest (best quality) first.
+            compareByDescending<Pair<LlmModelInfo, ModelCompatibility>> { it.second.isCompatible }
+                .thenByDescending { it.second.canRun }
                 .thenByDescending { it.first.sizeBytes }
         )
         .map { (model, compat) ->
