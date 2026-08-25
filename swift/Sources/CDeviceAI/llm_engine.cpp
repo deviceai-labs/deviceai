@@ -53,6 +53,29 @@ static void cleanup() {
 }
 
 /**
+ * Choose a context window that bounds the KV cache.
+ *
+ * llama.cpp pre-allocates the KV cache for the FULL context at load time
+ * (size ~= 2 * n_layers * n_ctx * n_embd * bytes). Loading at the model's
+ * native context — Llama 3.2's is 128k tokens — reserves 1-2 GB of KV cache on
+ * top of the weights and OOMs memory-constrained on-device/edge targets
+ * (phones, SBCs, embedded chips) even for a small (1B) model.
+ *
+ * Cap by model size: larger weights leave less headroom, so give them less
+ * context. Then clamp to the model's trained context so we never exceed it.
+ * 2k-4k is ample for on-device chat (~1.5k-3k words of history).
+ */
+static uint32_t choose_context_size(llama_model *model) {
+    const double params_b = (double) llama_model_n_params(model) / 1e9;
+    uint32_t n_ctx = (params_b >= 3.0) ? 2048u : 4096u;
+    const int32_t trained = llama_model_n_ctx_train(model);
+    if (trained > 0 && n_ctx > (uint32_t) trained) {
+        n_ctx = (uint32_t) trained;
+    }
+    return n_ctx;
+}
+
+/**
  * Build a formatted prompt from role/content arrays using the model's
  * embedded Jinja chat template (ChatML, Llama 3, Gemma, Mistral, etc.).
  *
@@ -194,7 +217,7 @@ bool dai_llm_init(const char* model_path, int max_threads, bool use_gpu) {
     }
 
     llama_context_params cparams = llama_context_default_params();
-    cparams.n_ctx     = 0; // use model's native context size
+    cparams.n_ctx     = choose_context_size(g_model); // bound KV cache; see helper
     cparams.n_threads = max_threads;
 
     g_ctx = llama_init_from_model(g_model, cparams);
