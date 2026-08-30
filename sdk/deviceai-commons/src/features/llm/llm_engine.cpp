@@ -20,6 +20,7 @@
 #include <cstring>
 #include <cstdlib>
 #include <cstdio>
+#include <algorithm>
 
 // ═══════════════════════════════════════════════════════════════
 //                         Global state
@@ -52,6 +53,19 @@ static void cleanup() {
     if (g_model) { llama_model_free(g_model);  g_model = nullptr; }
 }
 
+// Footprint-estimation constants (see dai_llm_estimated_memory_bytes).
+// Bytes of file per weight for a 4-bit GGUF (~4.5 bits/weight + metadata) —
+// used to recover an approximate parameter count from a file size.
+static constexpr double kQ4BytesPerWeight = 0.6;
+// KV bytes per token as a fraction of file size. Calibrated on modern GQA
+// models: Llama 3.2 3B ~112 KB/token at a 2.0 GB file, Llama 3.1 8B ~128 KB at
+// 4.6 GB.
+static constexpr double kKvBytesPerFileByte = 5.6e-5;
+// Floor for the above: sub-1B models are deep relative to their weight count
+// (SmolLM2 360M: 32 layers, ~40 KB/token from a ~230 MB file), so the fraction
+// alone badly under-counts them.
+static constexpr double kMinKvBytesPerToken = 40.0 * 1024;
+
 /**
  * Choose a context window that bounds the KV cache.
  *
@@ -64,10 +78,17 @@ static void cleanup() {
  * Cap by model size: larger weights leave less headroom, so give them less
  * context. Then clamp to the model's trained context so we never exceed it.
  * 2k-4k is ample for on-device chat (~1.5k-3k words of history).
+ *
+ * The cap is split out of choose_context_size() because
+ * dai_llm_estimated_memory_bytes() has to size the KV cache against the SAME
+ * context we will request — one tiering rule, two callers.
  */
+static uint32_t context_cap_for_params(double params_b) {
+    return (params_b >= 3.0) ? 2048u : 4096u;
+}
+
 static uint32_t choose_context_size(llama_model *model) {
-    const double params_b = (double) llama_model_n_params(model) / 1e9;
-    uint32_t n_ctx = (params_b >= 3.0) ? 2048u : 4096u;
+    uint32_t n_ctx = context_cap_for_params((double) llama_model_n_params(model) / 1e9);
     const int32_t trained = llama_model_n_ctx_train(model);
     if (trained > 0 && n_ctx > (uint32_t) trained) {
         n_ctx = (uint32_t) trained;
@@ -298,11 +319,32 @@ void dai_llm_free_string(char* str) {
 
 int64_t dai_llm_estimated_memory_bytes(int64_t model_size_bytes) {
     if (model_size_bytes <= 0) return 0;
-    // Q4 weights (~1.0x, mmap'd but resident under memory pressure) plus KV
-    // cache and compute buffers (~0.3x for typical mobile contexts). Kept here
-    // so all bindings share one heuristic; refine (e.g. context/quant-aware)
-    // without touching any platform code.
-    return static_cast<int64_t>(static_cast<double>(model_size_bytes) * 1.3);
+
+    const double file = static_cast<double>(model_size_bytes);
+
+    // 1. Weights. The GGUF is mmap'd, but under memory pressure the resident
+    //    set approaches the whole file, so count it in full.
+    const double weights = file;
+
+    // 2. KV cache. Pre-allocated at load for the context we request, so it is
+    //    bounded and predictable now that choose_context_size() caps n_ctx —
+    //    the same cap has to be applied here, hence context_cap_for_params().
+    //    We only have a file size (the caller may not have downloaded the
+    //    model yet), so approximate the two unknowns:
+    //      params        ~= file / kQ4BytesPerWeight (4-bit quant + metadata)
+    //      kv-per-token  ~= 2 (K+V) * n_layers * n_kv_embd * 2 (f16), which
+    //                       for modern GQA models tracks kKvBytesPerFileByte,
+    //                       floored because small-but-deep models (a 360M with
+    //                       32 layers) have their cache set by depth, not by
+    //                       weight count.
+    const double params_b     = file / (kQ4BytesPerWeight * 1e9);
+    const double kv_per_token = std::max(file * kKvBytesPerFileByte, kMinKvBytesPerToken);
+    const double kv           = kv_per_token * context_cap_for_params(params_b);
+
+    // 3. Compute buffers, logits, tokenizer, allocator slack.
+    const double overhead = std::max(file * 0.05, 32.0 * 1024 * 1024);
+
+    return static_cast<int64_t>(weights + kv + overhead);
 }
 
 } // extern "C"
