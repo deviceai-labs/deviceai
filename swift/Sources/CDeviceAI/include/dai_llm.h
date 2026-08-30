@@ -86,8 +86,9 @@ void dai_llm_free_string(char* str);
 
 /**
  * Estimate the RAM needed to load and run a model of the given file size:
- * quantized weights (resident under memory pressure) plus KV cache and compute
- * buffers. Compare the result against the device's AVAILABLE memory, not total.
+ * quantized weights (resident under memory pressure), the KV cache reserved
+ * for the context the engine will actually request, and compute buffers.
+ * Compare the result against the device's AVAILABLE memory, not total.
  *
  * Single source of truth for the footprint heuristic so every platform binding
  * (Android/iOS/Flutter/RN) agrees. Pure — no model needs to be loaded.
