@@ -87,7 +87,7 @@ static uint32_t context_cap_for_params(double params_b) {
     return (params_b >= 3.0) ? 2048u : 4096u;
 }
 
-static uint32_t choose_context_size(llama_model *model) {
+static uint32_t choose_context_size(const llama_model *model) {
     uint32_t n_ctx = context_cap_for_params((double) llama_model_n_params(model) / 1e9);
     const int32_t trained = llama_model_n_ctx_train(model);
     if (trained > 0 && n_ctx > (uint32_t) trained) {
@@ -141,6 +141,77 @@ static llama_sampler* build_sampler(float temperature, float top_p, int top_k, f
     ));
     llama_sampler_chain_add(chain, llama_sampler_init_dist(LLAMA_DEFAULT_SEED));
     return chain;
+}
+
+/**
+ * Count the tokens `text` would produce, without materializing them.
+ * llama_tokenize returns -(required) when the output buffer is too small, so a
+ * zero-length buffer asks "how many?" for free.
+ */
+static int count_prompt_tokens(const std::string &text) {
+    const llama_vocab *vocab = llama_model_get_vocab(g_model);
+    const int n = llama_tokenize(
+        vocab, text.c_str(), (int) text.size(),
+        nullptr, 0, /*add_special=*/false, /*parse_special=*/true
+    );
+    return n < 0 ? -n : n;
+}
+
+/**
+ * Build a prompt that fits the context, dropping the oldest turns if needed.
+ *
+ * The KV cache holds the prompt AND every token we generate, and n_ctx is now
+ * capped at 2k-4k (see choose_context_size), so a long enough conversation
+ * overflows it. Before the cap the native context was large enough that this
+ * never came up; at 4k it is reachable in ordinary use.
+ *
+ * Trim oldest-first: a leading system message is pinned (it carries the
+ * model's instructions) and the newest turn is never dropped (it is the actual
+ * question). Returns "" if even that pair cannot fit — callers surface a
+ * failure rather than silently asking the model something different.
+ */
+static std::string build_prompt_fitted(
+    const char** roles, const char** contents, int n_messages, int max_tokens
+) {
+    if (!g_model || !g_ctx || n_messages <= 0) return "";
+
+    const int n_ctx = (int) llama_n_ctx(g_ctx);
+    // Reserve room for the reply, but never more than half the window — a large
+    // max_tokens would otherwise leave no room for the question itself.
+    const int reserve = std::min(std::max(max_tokens, 1), n_ctx / 2);
+    const int budget  = n_ctx - reserve;
+
+    const bool pin_system      = roles[0] && std::strcmp(roles[0], "system") == 0;
+    const int  first_droppable = pin_system ? 1 : 0;
+
+    for (int start = first_droppable; start < n_messages; start++) {
+        std::vector<const char*> r, c;
+        r.reserve(n_messages);
+        c.reserve(n_messages);
+        if (pin_system) {
+            r.push_back(roles[0]);
+            c.push_back(contents[0]);
+        }
+        for (int i = start; i < n_messages; i++) {
+            r.push_back(roles[i]);
+            c.push_back(contents[i]);
+        }
+
+        std::string prompt = build_prompt(r.data(), c.data(), (int) r.size());
+        if (prompt.empty()) return "";
+
+        const int n = count_prompt_tokens(prompt);
+        if (n <= budget) {
+            if (start > first_droppable) {
+                LOGI("Trimmed %d oldest message(s) to fit context (%d tokens, budget %d)",
+                     start - first_droppable, n, budget);
+            }
+            return prompt;
+        }
+    }
+
+    LOGE("Prompt does not fit the %d-token context even after trimming", n_ctx);
+    return "";
 }
 
 /**
@@ -239,6 +310,12 @@ bool dai_llm_init(const char* model_path, int max_threads, bool use_gpu) {
 
     llama_context_params cparams = llama_context_default_params();
     cparams.n_ctx     = choose_context_size(g_model); // bound KV cache; see helper
+    // The prompt is submitted to llama_decode as ONE batch, and llama.cpp
+    // asserts (GGML_ABORT, not an error return) when a batch exceeds n_batch.
+    // The default is 2048, so without this a prompt between 2049 and n_ctx
+    // tokens would abort the process. n_ubatch stays at its default — that is
+    // the physical batch that sizes the compute buffers, so memory is unchanged.
+    cparams.n_batch   = cparams.n_ctx;
     cparams.n_threads = max_threads;
 
     g_ctx = llama_init_from_model(g_model, cparams);
@@ -269,7 +346,9 @@ char* dai_llm_generate(
     float repeat_penalty
 ) {
     g_cancel = false;
-    std::string prompt = build_prompt(roles, contents, n_messages);
+    std::string prompt = build_prompt_fitted(roles, contents, n_messages, max_tokens);
+
+    if (prompt.empty()) return nullptr;
 
     std::string result = do_generate(
         prompt, max_tokens, temperature, top_p, top_k, repeat_penalty,
@@ -293,7 +372,7 @@ void dai_llm_generate_stream(
     void* ctx
 ) {
     g_cancel = false;
-    std::string prompt = build_prompt(roles, contents, n_messages);
+    std::string prompt = build_prompt_fitted(roles, contents, n_messages, max_tokens);
 
     if (prompt.empty()) {
         if (on_error) on_error("Failed to build prompt", ctx);
